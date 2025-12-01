@@ -44,7 +44,7 @@ library(dunn.test)
 library(microbiome)
 library(pairwiseAdonis)
 
-ps_tax <- readRDS(url("https://github.com/grazicioletti/Calf_Nasopharyngeal_Microbiome_2025/raw/main/ps_tax.RDS"))
+ps_tax <- readRDS("~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/AMC-Paper/6.RawData-SRA-Github/Github/data/ps_tax.RDS")
 
 ```
 

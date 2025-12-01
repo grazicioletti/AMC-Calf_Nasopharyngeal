@@ -49,15 +49,15 @@ library(paletteer)
 library(speedyseq)
 
 # Load phyloseq object
-ps <- readRDS(url("https://github.com/grazicioletti/Calf_Nasopharyngeal_Microbiome_2025/raw/main/rawps_amr.rds"))
+rawps_amr <- readRDS("~/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling/rawps_amr.rds")
 
 
 # Filter genes that require SNP Confirmation
-psfilt <- ps %>% tax_select(tax_list = "SNP", strict_matches = FALSE, deselect = TRUE)
+psfilt <- rawps_amr %>% tax_select(tax_list = "SNP", strict_matches = FALSE, deselect = TRUE)
 
 ```
 
-```{r decontam, results="hide"}
+```{r decontam}
 
 library(decontam)
 
@@ -81,7 +81,7 @@ contams <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE", ])
 
 # Display list of contaminants
 cat("List of contaminants:\n")
-print(contams)
+print(contams) # 55
 
 # Remove contaminant sequences
 noncontam <- prune_taxa(!rownames(ps2@tax_table) %in% contams, ps2)
@@ -100,6 +100,9 @@ factor(sample_data(noneg)$Trt)
 noneg <- ps_filter(noneg, Trt != "PositiveControl")
 factor(sample_data(noneg)$Trt)
 
+# Remove weeks 3, 13 and 15
+noneg <- ps_filter(noneg, !Age_wk %in% c("3", "13", "15"))
+
 # Prevalence-based filtering for negonly decontam
 sort(phyloseq::sample_sums(noneg))
 (noneg <- phyloseq::subset_samples(noneg, phyloseq::sample_sums(noneg) > 1))
@@ -115,7 +118,6 @@ sample_data(noneg)
 ## Alpha Diversity
 
 ```{r alpha_diversity-summary"}
-
 
 # Get alpha diversity metrics
 sampdf <- sample_data(noneg) %>%
@@ -160,7 +162,7 @@ shannon_upper_outliers <- alpha$ID[alpha$Shannon > st$outhi]
 
 print(shannon_lower_outliers) # 0
 print(shannon_upper_outliers) # 0
-print(st$sd) # 0.82
+print(st$sd) # 0.801
 
 # Checking Outliers for Observed Diversity
 sto <- alpha %>% get_summary_stats(Observed, type = "mean_sd") %>%
@@ -173,7 +175,7 @@ observed_upper_outliers <- alpha$ID[alpha$Observed > sto$outhi]
 
 print(observed_lower_outliers) # 0
 print(observed_upper_outliers) # 0
-print(sto$sd) # 201.118
+print(sto$sd) # 206.364
 
 ```
 
@@ -189,8 +191,8 @@ Shapiro-Wilk Test for Normality
 shapiro_shannon <- shapiro.test(alpha$Shannon)
 shapiro_observed <- shapiro.test(alpha$Observed)
 
-shapiro_shannon # p-value = 3.279e-08
-shapiro_observed # p-value = 2.586e-06
+shapiro_shannon # W = 0.75961, p-value = 4.095e-08
+shapiro_observed # W = 0.85721, p-value = 1.114e-05
 
 ```
 
@@ -213,13 +215,9 @@ alpha_No <- subset(alpha, Diet == "No")
 alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
 alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
 
-kruskal.test(Shannon ~ Age_wk, data = alpha_Ab) #  p-value = 0.639
-kruskal.test(Shannon ~ Age_wk, data = alpha_No) #  p-value = 0.1689
-
-# not necessary to run Dunn because Kruskal is ns, but anyway:
-# pairwise
-dunn_test_shannon <- dunn.test(alpha_No$Shannon, alpha_No$Age_wk, method = "BH") # p-value = 0.17
-
+kruskal.test(Shannon ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 1.8624, df = 4, p-value = 0.7611
+kruskal.test(Shannon ~ Age_wk, data = alpha_No) # Kruskal-Wallis chi-squared = 1.3218, df = 4, p-value = 0.8577
+# not necessary to run Dunn bc ns
 
 results_Shannon <- list()
 
@@ -261,8 +259,8 @@ alpha_No <- subset(alpha, Diet == "No")
 alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
 alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
 
-kruskal.test(Observed ~ Age_wk, data = alpha_Ab) #  p-value = 0.639
-kruskal.test(Observed ~ Age_wk, data = alpha_No) #  p-value = 0.1689
+kruskal.test(Observed ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 1.5372, df = 4, p-value = 0.82
+kruskal.test(Observed ~ Age_wk, data = alpha_No) # Kruskal-Wallis chi-squared = 0.82064, df = 4, p-value = 0.9357
 
 
 ## Comparing Ab and No regarding same week
@@ -291,7 +289,7 @@ results_df_Observed$Groups_Compared <- "Ab vs No"
 print(results_df_Observed)
 
 # plotting
-alpha$Age_wk <- factor(alpha$Age_wk, levels = c(1, 3, 5, 7, 9, 11, 13, 15))
+alpha$Age_wk <- factor(alpha$Age_wk, levels = c(1, 5, 7, 9, 11))
 
 alpha$Diet <- recode_factor(alpha$Diet,
                             "Ab" = "MR+A",
@@ -304,7 +302,7 @@ ggline(alpha, x = "Age_wk", y = "Shannon",
        color = "Diet", group = "Diet",
        palette = treatment_colors,
        size = 1.0, point.size = 1.5, alpha = 0.8) +
-  scale_x_discrete(labels = c("1","3","5","7","9","11","13","15")) +
+  scale_x_discrete(labels = c("1","5","7","9","11")) +
   labs(x = "Age (weeks)", y = "Shannon Diversity") +
   theme_classic(base_size = 12) +
   theme(
@@ -318,8 +316,7 @@ ggline(alpha, x = "Age_wk", y = "Observed",
        color = "Diet", group = "Diet",
        palette = treatment_colors,
        size = 1.0, point.size = 1.5, alpha = 0.8) +
-  scale_x_discrete(labels = c("1","3","5","7","9","11","13","15")) +
-  scale_y_continuous(expand = c(0,0)) +
+  scale_x_discrete(labels = c("1","5","7","9","11")) +
   labs(x = "Age (weeks)", y = "Observed Diversity") +
   theme_classic(base_size = 12) +
   theme(
@@ -341,8 +338,8 @@ AMR Genes
 ```{r}
 
 #Test treatment 
-wilcox.test(Shannon ~ Diet, data = alpha) #  p-value = 0.09302 
-wilcox.test(Observed ~ Diet, data = alpha) # p-value = 0.07224
+wilcox.test(Shannon ~ Diet, data = alpha) # W = 399, p-value = 0.6935
+wilcox.test(Observed ~ Diet, data = alpha) # W = 388.5, p-value = 0.8261
 
 ```
 
@@ -382,11 +379,12 @@ AMR Genes
 ```{r beta_div-Ab}
 
 # ADONIS test for Age_wk within the 'Ab' group
-adonis2(psdist_Ab ~ sample_data(beta1_Ab)$Age_wk, permutations = 10000) # p = 0.6908
+adonis2(psdist_Ab ~ sample_data(beta1_Ab)$Age_wk, permutations = 10000) 
 
-# Pairwise comparison for Age_wk within the 'Ab' group
-statdf_Ab <- pairwise.adonis(psdist_Ab, sample_data(beta1_Ab)$Age_wk)
-print(statdf_Ab) # 7 vs 15 p = 0.032 padj = 0.896 
+#          Df SumOfSqs      R2      F Pr(>F)
+# Model     4   0.6555 0.0881 0.6038 0.8025
+# Residual 25  6.7848 0.9119              
+# Total    29  7.4402 1.00000  
 
 # plotting merged betas on the next chunk
 
@@ -401,11 +399,14 @@ AMR Genes
 ```{r beta_div-No}
 
 # ADONIS test for Age_wk within the 'No' group
-adonis2(psdist_No ~ sample_data(beta1_No)$Age_wk, permutations = 10000) # p = 0.06359
+adonis2(psdist_No ~ sample_data(beta1_No)$Age_wk, permutations = 10000)
 
-# Pairwise comparison for Age_wk within the 'No' group
-statdf_No <- pairwise.adonis(psdist_No, sample_data(beta1_No)$Age_wk)
-print(statdf_No) # 5 vs 3 p = 0.015 padj = 1.00
+#          Df SumOfSqs      R2      F Pr(>F)  
+# Model     4   0.39113 0.1285 0.7372 0.6561 
+# Residual 20   2.65278 0.8715                
+# Total    24   3.04392 1.00000   
+
+# no pairwise comparison since ns
 
 ## for plotting 
 
@@ -423,7 +424,7 @@ sample_data(beta)$Diet <- recode(sample_data(beta)$Diet,
 
 sample_data(beta)$Diet <- factor(sample_data(beta)$Diet, levels = c("MR+A", "MR"))
 sample_data(beta)$Age_wk <- factor(sample_data(beta)$Age_wk,
-                                       levels = c("1","3","5","7","9","11","13","15"))
+                                       levels = c("1","5","7","9","11"))
 
 # 2️⃣ Palettes
 treatment_colors <- c("MR+A" = "#450c54", "MR" = "#24868E")
@@ -475,71 +476,124 @@ p
 Broad class and class
 
 ```{r comp_amr}
-
-library(microbiomeutilities)
+###############################################################################
+# LOAD LIBRARIES
+###############################################################################
+library(phyloseq)
+library(microbiome)
+library(tidyverse)
+library(readr)
 library(viridisLite)
 library(ComplexHeatmap)
 library(circlize)
 library(grid)
 
-## ===== 1) Prepare data =====
-psrel  <- microbiome::transform(noneg, "compositional")
-psmech <- aggregate_taxa(psrel, level = "Class")
 
-otu  <- as.data.frame(otu_table(psmech))
-tax  <- as.data.frame(tax_table(psmech))
-otu2 <- rownames_to_column(otu, "Class")
-merge <- merge(otu2, tax, "Class")
+###############################################################################
+# 0) REMOVE CONTROLS FIRST
+###############################################################################
+noneg <- prune_samples(
+  !sample_names(noneg) %in% c("AMC550", "AMC551", "AMC552"),
+  noneg
+)
 
-# Order by Broadclass
-m2  <- merge[order(merge$Broadclass), ]
-df2 <- m2 |> select(!c("Broadclass", "unique")) |> rownames_to_column("tmp") |> select(!tmp)
-mat <- column_to_rownames(df2, "Class")
 
-# Z-scores
-z  <- scale(mat)
-z3 <- as.matrix(z)
+###############################################################################
+# 1) AGGREGATE TO AMR CLASS
+###############################################################################
+psrel   <- microbiome::transform(noneg, "compositional")
+psclass <- tax_glom(psrel, taxrank = "Class")
 
-# Clean and fix names
-clean_names <- function(x){
-  x <- str_replace_all(x, "_", " ")
-  x <- str_replace_all(x, "resistance", "")
-  x <- str_replace_all(x, "and", "+")
-  x <- str_replace_all(x, "(?i)betalactam", "Beta-lactam")   # fix Beta-lactam capitalization
-  x <- str_replace_all(x, "(?i)multidrug", "Multidrug")
-  x
-}
-rownames(z3) <- clean_names(rownames(z3))
+mat <- as.data.frame(otu_table(psclass))
+class_names <- as.character(tax_table(psclass)[, "Class"])
+rownames(mat) <- class_names
 
-## ===== 2) Metadata =====
-met <- read_csv(url("https://raw.githubusercontent.com/grazicioletti/Calf_Nasopharyngeal_Microbiome_2025/refs/heads/main/AMC-metadata.csv")) |>
-  column_to_rownames("Project_ID")
+mat <- mat %>%
+  rownames_to_column("Class") %>%
+  group_by(Class) %>%
+  summarise(across(everything(), mean)) %>%
+  column_to_rownames("Class")
 
-met$Diet <- case_when(
+z3 <- scale(as.matrix(mat))
+z3 <- as.matrix(z3)
+
+
+###############################################################################
+# 2) METADATA
+###############################################################################
+AMC_metadata <- read_csv(
+  "~/OneDrive - The Pennsylvania State University/AMC_samples/AMC-metadata.csv",
+  col_types = cols(Project_ID = col_character())
+)
+
+AMC_metadata <- AMC_metadata %>%
+  mutate(across(where(is.character), ~na_if(trimws(.), "")))
+
+keep <- colnames(z3)
+
+met <- AMC_metadata %>%
+  filter(Project_ID %in% keep) %>%
+  filter(!Age_wk %in% c(3, 13, 15))
+
+met$Treatment <- case_when(
   str_detect(met$Diet, "Ab") ~ "MR+A",
   str_detect(met$Diet, "No") ~ "MR",
   TRUE ~ met$Diet
 )
 
-met2 <- met |> select(Diet, Age_wk)
-names(met2) <- c("Treatment", "Age_wk")
+met <- met[match(keep, met$Project_ID), ]
+stopifnot(identical(met$Project_ID, keep))
 
-age_num <- parse_number(as.character(met2$Age_wk))
-met2$Age <- factor(age_num, levels = sort(unique(age_num)))
+met2 <- met %>% select(Treatment, Age_wk)
+rownames(met2) <- met$Project_ID
 met2$Treatment <- factor(met2$Treatment, levels = c("MR+A", "MR"))
+met2$Age       <- factor(as.numeric(met2$Age_wk))
 
-met2 <- met2[colnames(z3), , drop = FALSE]
-stopifnot(identical(rownames(met2), colnames(z3)))
 
-## ===== 3) Resistance Type table =====
-merge3 <- merge |> select(Class, Broadclass) |> as.data.frame() |> column_to_rownames("Class")
-names(merge3)[1] <- "Resistance Type"
-rownames(merge3) <- clean_names(rownames(merge3))
+###############################################################################
+# 3) RESISTANCE CLASS (Broadclass)
+###############################################################################
+merge3 <- as.data.frame(tax_table(psclass)) %>%
+  select(Class, Broadclass)
+
+rownames(merge3) <- merge3$Class
 merge3 <- merge3[rownames(z3), , drop = FALSE]
+stopifnot(identical(rownames(merge3), rownames(z3)))
 
-## ===== 4) Colors =====
+merge3$Mean <- rowMeans(mat)[merge3$Class]
+
+top5_df <- merge3 %>%
+  group_by(Broadclass) %>%
+  arrange(desc(Mean)) %>%
+  slice_head(n = 5)
+
+top5 <- top5_df$Class
+
+z3_sub <- z3[top5, , drop = FALSE]
+merge3_sub <- merge3[top5, , drop = FALSE]
+stopifnot(identical(rownames(z3_sub), rownames(merge3_sub)))
+
+row_split <- merge3_sub$Broadclass
+
+
+###############################################################################
+# 4) ANNOTATIONS
+###############################################################################
 treatment_colors <- c("MR+A" = "#450c54", "MR" = "#24868E")
-age_palette <- setNames(viridis(length(levels(met2$Age)), option = "G"), levels(met2$Age))
+
+age_palette <- setNames(
+  viridis(length(levels(met2$Age)), option = "G"),
+  levels(met2$Age)
+)
+
+ha_col <- HeatmapAnnotation(
+  df = met2[, c("Treatment", "Age")],
+  col = list(
+    Treatment = treatment_colors,
+    Age       = age_palette
+  )
+)
+
 resistance_colors <- c(
   "Biocides"       = "#552F7A",
   "Drugs"          = "#7C5F98",
@@ -547,59 +601,113 @@ resistance_colors <- c(
   "Multi-compound" = "#CABED6"
 )
 
-## ===== 5) Annotations =====
-ha_col <- HeatmapAnnotation(
-  df  = met2[, c("Treatment", "Age")],
-  col = list(Treatment = treatment_colors, Age = age_palette),
-  annotation_legend_param = list(
-    Age = list(title = "Age (weeks)"),
-    Treatment = list(title = "Treatment")
-  )
-)
-
-## ===== 6) Subset 5 per Resistance Type =====
-subset_classes_tbl <- merge3 |>
-  rownames_to_column("Class") |>
-  group_by(`Resistance Type`) |>
-  slice_head(n = 5) |>
-  ungroup()
-
-z3_sub <- z3[subset_classes_tbl$Class, , drop = FALSE]
-merge3_sub <- merge3[subset_classes_tbl$Class, , drop = FALSE]
-stopifnot(identical(rownames(z3_sub), rownames(merge3_sub)))
-
-## ===== 7) Row annotation =====
 ha_row <- rowAnnotation(
-  ` ` = merge3_sub$`Resistance Type`,
-  col  = list(` ` = resistance_colors),
-  annotation_name_gp = gpar(fontsize = 0),
-  annotation_legend_param = list(title = "Resistance Type")
+  Resistance = merge3_sub$Broadclass,
+  col = list(Resistance = resistance_colors),
+  show_annotation_name = FALSE,
+  annotation_name_gp = gpar(fontsize = 0)
 )
 
-## ===== 8) Column grouping by Treatment =====
-split_col <- factor(met2$Treatment, levels = c("MR+A", "MR"))
 
-## ===== 9) Final Heatmap =====
+###############################################################################
+# 5) ORDER COLUMNS WITHOUT LABELS
+###############################################################################
+ord <- order(met2$Treatment, met2$Age)
+z3_sub <- z3_sub[, ord, drop = FALSE]
+met2   <- met2[ord, , drop = FALSE]
+
+
+###############################################################################
+# 6) FINAL HEATMAP — NO LEFT TEXT, NO LABELS, SMALL GROUP GAPS
+###############################################################################
 ht <- Heatmap(
   z3_sub,
-  name = "Z-score",
+  name            = "Z-score",
   top_annotation  = ha_col,
   left_annotation = ha_row,
-  cluster_rows    = FALSE,
+
+  row_split       = row_split,
+  row_title       = NULL,                 # hide split labels
+  row_title_gp    = gpar(fontsize = 0),   # fully invisible
+  row_gap         = unit(1.2, "mm"),      # slightly smaller spacing
+
+  cluster_rows    = TRUE,
   cluster_columns = TRUE,
-  column_split    = split_col,
   show_column_names = FALSE,
-  show_heatmap_legend = TRUE,
+
   col = colorRamp2(c(-2, 0, 2), viridis(3, option = "G")),
-  row_names_gp      = gpar(fontsize = 8),
+  row_names_gp = gpar(fontsize = 10),
   border = TRUE,
-  heatmap_legend_param = list(title = "Abundance (Z)"),
-  gap = unit(1, "mm"),
-  column_title = NULL,   # remove MR/MR+A big headers
-  column_title_gp = gpar(fontsize = 0)
+  heatmap_legend_param = list(title = "Z-score")
 )
 
-# Draw final clean figure
 draw(ht)
+
+
+```
+``` {r }
+# ========================================================================
+
+# SAVE ALL PROCESSED AMR OUTPUTS FOR REPRODUCIBILITY
+
+# ========================================================================
+
+
+## 1) Decontam outputs
+
+write.csv(contamdf.prev,           "amr/decontam_results.csv", row.names = TRUE)
+writeLines(contams,                "amr/list_of_contaminants.txt")
+
+## 2) Cleaned phyloseq objects
+
+saveRDS(noneg,                     "amr/noneg_amr_clean.rds")
+saveRDS(psdist_Ab,                 "amr/psdist_Ab.rds")
+saveRDS(psdist_No,                 "amr/psdist_No.rds")
+
+## 3) Alpha diversity tables
+
+write.csv(alpha,                   "amr/alpha_raw.csv", row.names = FALSE)
+write.csv(sum_Shannon,             "amr/sum_Shannon.csv", row.names = FALSE)
+write.csv(sum_Observed,            "amr/sum_Observed.csv", row.names = FALSE)
+write.csv(results_df_Shannon,      "amr/wilcox_Shannon_byweek.csv", row.names = FALSE)
+write.csv(results_df_Observed,     "amr/wilcox_Observed_byweek.csv", row.names = FALSE)
+
+## 4) Outliers
+
+writeLines(shannon_upper_outliers, "amr/outlier_Shannon_upper.txt")
+writeLines(observed_upper_outliers,"amr/outlier_Observed_upper.txt")
+
+## 5) Beta diversity / PERMANOVA
+
+write.csv(adonis2(psdist_Ab ~ sample_data(beta1_Ab)$Age_wk),
+"amr/beta_PERMANOVA_Ab.csv")
+write.csv(adonis2(psdist_No ~ sample_data(beta1_No)$Age_wk),
+"amr/beta_PERMANOVA_No.csv")
+
+## 6) CLR abundance matrices for both groups
+
+clr_abundance_Ab <- as.matrix(otu_table(beta1_Ab))
+clr_abundance_No <- as.matrix(otu_table(beta1_No))
+
+write.csv(clr_abundance_Ab,        "amr/clr_abundance_Ab.csv")
+write.csv(clr_abundance_No,        "amr/clr_abundance_No.csv")
+
+## 7) Resistance class heatmap matrices
+
+write.csv(z3,                      "amr/zscore_matrix_class.csv")
+write.csv(z3_sub,                  "amr/zscore_matrix_class_top5.csv")
+
+## 8) Tax tables
+
+write.csv(as.data.frame(tax_table(noneg)),
+"amr/tax_table_cleaned.csv")
+
+## 9) Composition summaries
+
+write.csv(mat,                     "amr/otu_table_rel_abund.csv")
+write.csv(merge3,                  "amr/AMR_class_abundance_table.csv")
+write.csv(top5_df,                 "amr/AMR_class_top5.csv")
+
+cat("✓ All AMR output files saved in /amr folder\n")
 
 ```

@@ -12,3 +12,4 @@
 renv/
 output/
 rawdata/
+.Rproj.user
