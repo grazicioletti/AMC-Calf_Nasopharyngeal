@@ -16,9 +16,6 @@ knitr::opts_chunk$set(
 )
 
 
-# Set our global root directory
-knitr::opts_knit$set(root.dir = "/Users/gkc5305/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling")
-
 ```
 ```
 
@@ -44,7 +41,7 @@ library(dunn.test)
 library(microbiome)
 library(pairwiseAdonis)
 
-ps_tax <- readRDS("~/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling/ps_tax.RDS")
+ps_tax <- readRDS("data/ps_tax.RDS")
 
 ```
 

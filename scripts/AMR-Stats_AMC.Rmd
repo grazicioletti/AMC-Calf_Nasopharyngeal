@@ -18,9 +18,6 @@ knitr::opts_chunk$set(
 )
 
 
-# Set our global root directory
-knitr::opts_knit$set(root.dir = "/Users/gkc5305/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling")
-
 
 ```
 
@@ -49,8 +46,7 @@ library(paletteer)
 library(speedyseq)
 
 # Load phyloseq object
-rawps_amr <- readRDS("~/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling/rawps_amr.rds")
-
+rawps_amr <- readRDS("data/rawps_amr.rds")
 
 # Filter genes that require SNP Confirmation
 psfilt <- rawps_amr %>% tax_select(tax_list = "SNP", strict_matches = FALSE, deselect = TRUE)
