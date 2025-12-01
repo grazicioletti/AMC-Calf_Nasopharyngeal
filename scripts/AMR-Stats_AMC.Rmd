@@ -518,9 +518,10 @@ z3 <- as.matrix(z3)
 # 2) METADATA
 ###############################################################################
 AMC_metadata <- read_csv(
-  "~/OneDrive - The Pennsylvania State University/AMC_samples/AMC-metadata.csv",
+  "data/AMC-metadata.csv",
   col_types = cols(Project_ID = col_character())
 )
+
 
 AMC_metadata <- AMC_metadata %>%
   mutate(across(where(is.character), ~na_if(trimws(.), "")))
