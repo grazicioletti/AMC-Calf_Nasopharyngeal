@@ -1,0 +1,605 @@
+---
+title: "AMC-AMR_Stats"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-10-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 6,
+  fig.height = 4,
+  out.width = "80%"
+)
+
+
+# Set our global root directory
+knitr::opts_knit$set(root.dir = "/Users/gkc5305/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling")
+
+
+```
+
+<br>
+
+# AMR++
+
+Antimicrobial Resistance Genes Analysis
+
+```{r amrplusplus_analysis, results="hide"}
+library(BiocManager)
+library(tidyverse)
+library(phyloseq)
+library(microViz)
+library(tidylog)
+library(ggpubr)
+library(vegan)
+library(readxl)
+library(dunn.test)
+library(decontam)
+library(tibble)
+library(rstatix)
+library(magrittr)
+library(pairwiseAdonis)
+library(paletteer)
+library(speedyseq)
+
+# Load phyloseq object
+ps <- readRDS(url("https://github.com/grazicioletti/Calf_Nasopharyngeal_Microbiome_2025/raw/main/rawps_amr.rds"))
+
+
+# Filter genes that require SNP Confirmation
+psfilt <- ps %>% tax_select(tax_list = "SNP", strict_matches = FALSE, deselect = TRUE)
+
+```
+
+```{r decontam, results="hide"}
+
+library(decontam)
+
+# Decontamination using decontam package
+ps2 <- psfilt %>%
+  ps_mutate(
+    SampleBinary = if_else(str_detect(Trt, "Negative"), true = "Control", false = "Sample") # ignore positive 
+  )
+
+# Identify contaminants using prevalence method
+sample_data(ps2)$is.neg <- sample_data(ps2)$SampleBinary == "Control"
+contamdf.prev <- isContaminant(ps2, method="prevalence", neg="is.neg", threshold = 0.5)
+
+# Create phyloseq object of only contaminants in the controls
+con <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE", ])
+conps <- prune_taxa(rownames(ps2@tax_table) %in% con, ps2)
+negps <- subset_samples(conps, is.neg == "TRUE")
+
+# Extract list of contaminants
+contams <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE", ])
+
+# Display list of contaminants
+cat("List of contaminants:\n")
+print(contams)
+
+# Remove contaminant sequences
+noncontam <- prune_taxa(!rownames(ps2@tax_table) %in% contams, ps2)
+
+# Filter controls
+controls <- ps2 %>%
+  ps_filter(SampleBinary == "Control", .keep_all_taxa = TRUE)
+
+controls <- sample_data(controls)$Project_ID 
+
+# Remove all controls
+noneg <- ps_filter(noncontam, !Project_ID %in% controls)
+factor(sample_data(noneg)$Trt)
+
+# Remove positive control
+noneg <- ps_filter(noneg, Trt != "PositiveControl")
+factor(sample_data(noneg)$Trt)
+
+# Prevalence-based filtering for negonly decontam
+sort(phyloseq::sample_sums(noneg))
+(noneg <- phyloseq::subset_samples(noneg, phyloseq::sample_sums(noneg) > 1))
+(noneg <- phyloseq::prune_taxa(phyloseq::taxa_sums(noneg) > 0, noneg))
+noneg <- noneg %>% tax_filter(
+  min_prevalence = 0.01,
+  min_total_abundance = 0.0001)
+
+sample_data(noneg)
+
+```
+
+## Alpha Diversity
+
+```{r alpha_diversity-summary"}
+
+
+# Get alpha diversity metrics
+sampdf <- sample_data(noneg) %>%
+  data.frame() %>%
+  rownames_to_column(var = "ID")
+
+# Calculate alpha diversity
+alpha <- estimate_richness(noneg, measures = c("Shannon", "Observed")) %>%
+  rownames_to_column(var = "ID") %>%
+  merge(sampdf, by = "ID")
+
+# Get summary statistics for Shannon diversity
+sum_Shannon <- alpha %>%
+  group_by(Trt, Age_wk) %>%
+  get_summary_stats(Shannon, type = "mean_sd")
+
+# Print summary statistics
+print(sum_Shannon)
+
+# Get summary statistics for Observed diversity
+sum_Observed <- alpha %>%
+  group_by(Trt, Age_wk) %>%
+  get_summary_stats(Observed, type = "mean_sd")
+
+# Print summary statistics
+print(sum_Observed)
+
+```
+
+```{r alpha_diversity-outliers, results="hide"}
+
+## Outliers 
+
+# Checking Outliers for Shannon Diversity
+st <- alpha %>% get_summary_stats(Shannon, type = "mean_sd") %>%
+  mutate(sdx3 = sd * 3,
+         outhi = mean + sdx3,
+         outlo = mean - sdx3)
+
+shannon_lower_outliers <- alpha$ID[alpha$Shannon < st$outlo]
+shannon_upper_outliers <- alpha$ID[alpha$Shannon > st$outhi]
+
+print(shannon_lower_outliers) # 0
+print(shannon_upper_outliers) # 0
+print(st$sd) # 0.82
+
+# Checking Outliers for Observed Diversity
+sto <- alpha %>% get_summary_stats(Observed, type = "mean_sd") %>%
+  mutate(sdx3 = sd * 3,
+         outhi = mean + sdx3,
+         outlo = mean - sdx3)
+
+observed_lower_outliers <- alpha$ID[alpha$Observed < sto$outlo]
+observed_upper_outliers <- alpha$ID[alpha$Observed > sto$outhi]
+
+print(observed_lower_outliers) # 0
+print(observed_upper_outliers) # 0
+print(sto$sd) # 201.118
+
+```
+
+<br>
+
+Shapiro-Wilk Test for Normality
+
+```{r normality_tests}
+
+# Statistical Tests
+
+# Shapiro-Wilk Test for Normality
+shapiro_shannon <- shapiro.test(alpha$Shannon)
+shapiro_observed <- shapiro.test(alpha$Observed)
+
+shapiro_shannon # p-value = 3.279e-08
+shapiro_observed # p-value = 2.586e-06
+
+```
+
+<br>
+
+[Wilcox Test for Diet Effect]{.underline}
+
+Mann-Whitney and BH adjustment
+
+**Shannon Index**
+
+AMR Genes
+
+```{r Shannon}
+
+## Doing first within Ab and then No - Shannon 
+alpha_Ab <- subset(alpha, Diet == "Ab")
+alpha_No <- subset(alpha, Diet == "No")
+
+alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
+alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
+
+kruskal.test(Shannon ~ Age_wk, data = alpha_Ab) #  p-value = 0.639
+kruskal.test(Shannon ~ Age_wk, data = alpha_No) #  p-value = 0.1689
+
+# not necessary to run Dunn because Kruskal is ns, but anyway:
+# pairwise
+dunn_test_shannon <- dunn.test(alpha_No$Shannon, alpha_No$Age_wk, method = "BH") # p-value = 0.17
+
+
+results_Shannon <- list()
+
+# Loop through each week and perform the Mann-Whitney U test
+for (week in unique(alpha$Age_wk)) {
+  data_week <- subset(alpha, Age_wk == week)
+
+  # Mann-Whitney for Shannon
+  test_result_Shannon <- wilcox.test(Shannon ~ Trt, data = data_week)
+  results_Shannon[[paste0("Week_", week)]] <- test_result_Shannon$p.value
+}
+
+# Convert results to data frames 
+results_df_Shannon <- data.frame(Week = names(results_Shannon), P_Value = unlist(results_Shannon))
+
+# Adjust p-values to BH method
+results_df_Shannon$Adjusted_P_Value_BH <- p.adjust(results_df_Shannon$P_Value, method = "BH")
+
+# Add a column for the groups compared
+results_df_Shannon$Groups_Compared <- "Ab vs No"
+
+# plotting merged alphas on next chunk 
+
+```
+
+<br>
+
+
+**Observed Index**
+
+AMR Genes
+
+```{r Observed, fig.height=6, fig.width=8}
+
+## Doing first within Ab and then No - Shannon 
+alpha_Ab <- subset(alpha, Diet == "Ab")
+alpha_No <- subset(alpha, Diet == "No")
+
+alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
+alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
+
+kruskal.test(Observed ~ Age_wk, data = alpha_Ab) #  p-value = 0.639
+kruskal.test(Observed ~ Age_wk, data = alpha_No) #  p-value = 0.1689
+
+
+## Comparing Ab and No regarding same week
+
+results_Observed <- list()
+
+# Loop through each week and perform the Mann-Whitney U test
+for (week in unique(alpha$Age_wk)) {
+  data_week <- subset(alpha, Age_wk == week)
+
+  # Mann-Whitney for Observed
+  test_result_Observed <- wilcox.test(Observed ~ Trt, data = data_week)
+  results_Observed[[paste0("Week_", week)]] <- test_result_Observed$p.value
+}
+  
+# Convert results to data frames 
+results_df_Observed <- data.frame(Week = names(results_Observed), P_Value = unlist(results_Observed))
+
+# Adjust p-values to BH method
+results_df_Observed$Adjusted_P_Value_BH<- p.adjust(results_df_Observed$P_Value, method = "BH")
+
+# Add a column for the groups compared
+results_df_Observed$Groups_Compared <- "Ab vs No"
+
+# Print the results
+print(results_df_Observed)
+
+# plotting
+alpha$Age_wk <- factor(alpha$Age_wk, levels = c(1, 3, 5, 7, 9, 11, 13, 15))
+
+alpha$Diet <- recode_factor(alpha$Diet,
+                            "Ab" = "MR+A",
+                            "No" = "MR")
+
+treatment_colors <- c("MR+A" = "#450c54", "MR" = "#24868E")
+
+ggline(alpha, x = "Age_wk", y = "Shannon",
+       add = "mean_sd", error.plot = "errorbar",
+       color = "Diet", group = "Diet",
+       palette = treatment_colors,
+       size = 1.0, point.size = 1.5, alpha = 0.8) +
+  scale_x_discrete(labels = c("1","3","5","7","9","11","13","15")) +
+  labs(x = "Age (weeks)", y = "Shannon Diversity") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "right",
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_blank()   # remove title
+  )
+
+ggline(alpha, x = "Age_wk", y = "Observed",
+       add = "mean_sd", error.plot = "errorbar",
+       color = "Diet", group = "Diet",
+       palette = treatment_colors,
+       size = 1.0, point.size = 1.5, alpha = 0.8) +
+  scale_x_discrete(labels = c("1","3","5","7","9","11","13","15")) +
+  scale_y_continuous(expand = c(0,0)) +
+  labs(x = "Age (weeks)", y = "Observed Diversity") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "right",
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_blank()   # remove title
+  )
+
+```
+
+<br>
+
+[Wilcoxon Test for Diet Effect]{.underline}
+
+**Shannon and Observed Indexes**
+
+AMR Genes
+
+```{r}
+
+#Test treatment 
+wilcox.test(Shannon ~ Diet, data = alpha) #  p-value = 0.09302 
+wilcox.test(Observed ~ Diet, data = alpha) # p-value = 0.07224
+
+```
+
+<br><br>
+
+## Beta Diversity
+
+```{r beta_diversity, results="hide"}
+
+set.seed(12345)
+
+pst_Ab <- subset_samples(noneg, Diet == "Ab")
+pst_No <- subset_samples(noneg, Diet == "No")
+
+#  Transform sample counts
+pst_Ab <- transform_sample_counts(pst_Ab, function(x) x / sum(x))
+pst_No <- transform_sample_counts(pst_No, function(x) x / sum(x))
+
+# CLR transform phyloseq objects at Broadclass level
+beta1_Ab <- pst_Ab %>%
+  tax_transform(trans = "clr", rank = "Broadclass")
+
+beta1_No <- pst_No %>%
+  tax_transform(trans = "clr", rank = "Broadclass")
+
+# generate distance matrix
+psdist_Ab <- phyloseq::distance(beta1_Ab, method = "euclidean")
+psdist_No <- phyloseq::distance(beta1_No, method = "euclidean")
+
+```
+
+
+**Beta-diversity of the Ab group**
+
+AMR Genes
+
+```{r beta_div-Ab}
+
+# ADONIS test for Age_wk within the 'Ab' group
+adonis2(psdist_Ab ~ sample_data(beta1_Ab)$Age_wk, permutations = 10000) # p = 0.6908
+
+# Pairwise comparison for Age_wk within the 'Ab' group
+statdf_Ab <- pairwise.adonis(psdist_Ab, sample_data(beta1_Ab)$Age_wk)
+print(statdf_Ab) # 7 vs 15 p = 0.032 padj = 0.896 
+
+# plotting merged betas on the next chunk
+
+```
+
+<br>
+
+**Beta-diversity of the No group**
+
+AMR Genes
+
+```{r beta_div-No}
+
+# ADONIS test for Age_wk within the 'No' group
+adonis2(psdist_No ~ sample_data(beta1_No)$Age_wk, permutations = 10000) # p = 0.06359
+
+# Pairwise comparison for Age_wk within the 'No' group
+statdf_No <- pairwise.adonis(psdist_No, sample_data(beta1_No)$Age_wk)
+print(statdf_No) # 5 vs 3 p = 0.015 padj = 1.00
+
+## for plotting 
+
+#  Transform sample counts
+pst <- transform_sample_counts(noneg, function(x) x / sum(x))
+
+# CLR transform phyloseq objects at Broadclass level
+beta <- pst %>%
+  tax_transform(trans = "clr", rank = "Broadclass")
+
+
+sample_data(beta)$Diet <- recode(sample_data(beta)$Diet,
+                                     "Ab" = "MR+A",
+                                     "No" = "MR")
+
+sample_data(beta)$Diet <- factor(sample_data(beta)$Diet, levels = c("MR+A", "MR"))
+sample_data(beta)$Age_wk <- factor(sample_data(beta)$Age_wk,
+                                       levels = c("1","3","5","7","9","11","13","15"))
+
+# 2️⃣ Palettes
+treatment_colors <- c("MR+A" = "#450c54", "MR" = "#24868E")
+age_levels  <- levels(sample_data(beta)$Age_wk)
+age_palette <- setNames(viridis::viridis(length(age_levels), option = "G"), age_levels)
+shape_vals  <- c("MR+A" = 16, "MR" = 17)
+
+# 3️⃣ Ordination
+ord_all <- beta %>% ord_calc(method = "PCA")
+
+# 4️⃣ Plot
+p <- ord_all %>%
+  ord_plot(aes_shape = FALSE, points_show = FALSE) +
+  geom_point(aes(color = Age_wk, shape = Diet),
+             size = 3.2, alpha = 2, stroke = 0) +
+  scale_shape_manual(values = c("MR+A" = 16, "MR" = 17), name = "Diet") +
+  scale_color_manual(values = viridis::viridis(8, option = "G"),
+                     name = "Age (weeks)",
+                     guide = guide_legend(override.aes = list(size = 4))) +
+  ggnewscale::new_scale("color") +
+  stat_ellipse(aes(color = Diet, group = Diet),
+               level = 0.95, linewidth = 0.9, alpha = 0.9) +
+  scale_color_manual(values = c("MR+A" = "#450c54", "MR" = "#24868E"),
+                     name = "Diet") +
+  labs(x = "PC1", y = "PC2", caption = NULL) +
+  theme_bw(base_size = 13) +
+  theme(
+    legend.position = "right",
+    legend.box = "vertical",
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    axis.text = element_text(size = 11, face = "bold"),
+    axis.title = element_text(size = 12, face = "bold"),
+    text = element_text(size = 13),
+    panel.grid = element_blank(),
+    plot.margin = margin(5, 10, 5, 5),
+    plot.title = element_blank()
+  )
+
+
+p
+
+```
+
+<br><br>
+
+## Compositional plots
+
+Broad class and class
+
+```{r comp_amr}
+
+library(microbiomeutilities)
+library(viridisLite)
+library(ComplexHeatmap)
+library(circlize)
+library(grid)
+
+## ===== 1) Prepare data =====
+psrel  <- microbiome::transform(noneg, "compositional")
+psmech <- aggregate_taxa(psrel, level = "Class")
+
+otu  <- as.data.frame(otu_table(psmech))
+tax  <- as.data.frame(tax_table(psmech))
+otu2 <- rownames_to_column(otu, "Class")
+merge <- merge(otu2, tax, "Class")
+
+# Order by Broadclass
+m2  <- merge[order(merge$Broadclass), ]
+df2 <- m2 |> select(!c("Broadclass", "unique")) |> rownames_to_column("tmp") |> select(!tmp)
+mat <- column_to_rownames(df2, "Class")
+
+# Z-scores
+z  <- scale(mat)
+z3 <- as.matrix(z)
+
+# Clean and fix names
+clean_names <- function(x){
+  x <- str_replace_all(x, "_", " ")
+  x <- str_replace_all(x, "resistance", "")
+  x <- str_replace_all(x, "and", "+")
+  x <- str_replace_all(x, "(?i)betalactam", "Beta-lactam")   # fix Beta-lactam capitalization
+  x <- str_replace_all(x, "(?i)multidrug", "Multidrug")
+  x
+}
+rownames(z3) <- clean_names(rownames(z3))
+
+## ===== 2) Metadata =====
+met <- read_csv(url("https://raw.githubusercontent.com/grazicioletti/Calf_Nasopharyngeal_Microbiome_2025/refs/heads/main/AMC-metadata.csv")) |>
+  column_to_rownames("Project_ID")
+
+met$Diet <- case_when(
+  str_detect(met$Diet, "Ab") ~ "MR+A",
+  str_detect(met$Diet, "No") ~ "MR",
+  TRUE ~ met$Diet
+)
+
+met2 <- met |> select(Diet, Age_wk)
+names(met2) <- c("Treatment", "Age_wk")
+
+age_num <- parse_number(as.character(met2$Age_wk))
+met2$Age <- factor(age_num, levels = sort(unique(age_num)))
+met2$Treatment <- factor(met2$Treatment, levels = c("MR+A", "MR"))
+
+met2 <- met2[colnames(z3), , drop = FALSE]
+stopifnot(identical(rownames(met2), colnames(z3)))
+
+## ===== 3) Resistance Type table =====
+merge3 <- merge |> select(Class, Broadclass) |> as.data.frame() |> column_to_rownames("Class")
+names(merge3)[1] <- "Resistance Type"
+rownames(merge3) <- clean_names(rownames(merge3))
+merge3 <- merge3[rownames(z3), , drop = FALSE]
+
+## ===== 4) Colors =====
+treatment_colors <- c("MR+A" = "#450c54", "MR" = "#24868E")
+age_palette <- setNames(viridis(length(levels(met2$Age)), option = "G"), levels(met2$Age))
+resistance_colors <- c(
+  "Biocides"       = "#552F7A",
+  "Drugs"          = "#7C5F98",
+  "Metals"         = "#B09FC1",
+  "Multi-compound" = "#CABED6"
+)
+
+## ===== 5) Annotations =====
+ha_col <- HeatmapAnnotation(
+  df  = met2[, c("Treatment", "Age")],
+  col = list(Treatment = treatment_colors, Age = age_palette),
+  annotation_legend_param = list(
+    Age = list(title = "Age (weeks)"),
+    Treatment = list(title = "Treatment")
+  )
+)
+
+## ===== 6) Subset 5 per Resistance Type =====
+subset_classes_tbl <- merge3 |>
+  rownames_to_column("Class") |>
+  group_by(`Resistance Type`) |>
+  slice_head(n = 5) |>
+  ungroup()
+
+z3_sub <- z3[subset_classes_tbl$Class, , drop = FALSE]
+merge3_sub <- merge3[subset_classes_tbl$Class, , drop = FALSE]
+stopifnot(identical(rownames(z3_sub), rownames(merge3_sub)))
+
+## ===== 7) Row annotation =====
+ha_row <- rowAnnotation(
+  ` ` = merge3_sub$`Resistance Type`,
+  col  = list(` ` = resistance_colors),
+  annotation_name_gp = gpar(fontsize = 0),
+  annotation_legend_param = list(title = "Resistance Type")
+)
+
+## ===== 8) Column grouping by Treatment =====
+split_col <- factor(met2$Treatment, levels = c("MR+A", "MR"))
+
+## ===== 9) Final Heatmap =====
+ht <- Heatmap(
+  z3_sub,
+  name = "Z-score",
+  top_annotation  = ha_col,
+  left_annotation = ha_row,
+  cluster_rows    = FALSE,
+  cluster_columns = TRUE,
+  column_split    = split_col,
+  show_column_names = FALSE,
+  show_heatmap_legend = TRUE,
+  col = colorRamp2(c(-2, 0, 2), viridis(3, option = "G")),
+  row_names_gp      = gpar(fontsize = 8),
+  border = TRUE,
+  heatmap_legend_param = list(title = "Abundance (Z)"),
+  gap = unit(1, "mm"),
+  column_title = NULL,   # remove MR/MR+A big headers
+  column_title_gp = gpar(fontsize = 0)
+)
+
+# Draw final clean figure
+draw(ht)
+
+```

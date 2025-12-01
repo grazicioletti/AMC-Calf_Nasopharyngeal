@@ -1,0 +1,579 @@
+---
+title: "AMC-Tax_Stats"
+output: html_document
+date: "2025-10-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 6,
+  fig.height = 4,
+  out.width = "80%"
+)
+
+
+# Set our global root directory
+knitr::opts_knit$set(root.dir = "/Users/gkc5305/OneDrive - The Pennsylvania State University/AMC_samples/data_wrangling")
+
+```
+```
+
+<br><br>
+
+# Kraken2
+
+Taxonomical Analysis
+
+```{r taxonomy_analysis, results="hide"}
+
+# load necessary packages
+library(BiocManager)
+library(tidyverse)
+library(phyloseq)
+library(microViz)
+library(tidylog)
+library(ggpubr)
+library(vegan)
+library(readxl)
+library(viridis)
+library(dunn.test)
+library(microbiome)
+library(pairwiseAdonis)
+
+ps_tax <- readRDS(url("https://github.com/grazicioletti/Calf_Nasopharyngeal_Microbiome_2025/raw/main/ps_tax.RDS"))
+
+```
+
+
+## Decontam
+
+```{r decontam_tax, results="hide"}
+
+# Decontamination using decontam package
+library(decontam)
+
+ps3_tax <- ps_tax %>%
+  ps_mutate(
+    SampleBinary = if_else(str_detect(Trt, "NegativeControl"), true = "Control", false = "Sample")
+  )
+
+# Identify contaminants using prevalence method
+sample_data(ps3_tax)$is.neg <- sample_data(ps3_tax)$SampleBinary == "Control"
+contamdf.prev <- isContaminant(ps3_tax, method="prevalence", neg="is.neg", threshold = 0.8)
+
+# Create phyloseq object of only contaminants in the controls
+con_tax <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE", ])
+conps_tax <- prune_taxa(rownames(ps3_tax@tax_table) %in% con_tax, ps3_tax)
+negps_tax <- subset_samples(conps_tax, is.neg == "TRUE")
+
+# Extract list of contaminants
+contams_tax <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE", ])
+contams_tax # 776 with 0.8
+
+# Remove contaminant sequences
+noncontam_tax <- prune_taxa(!rownames(ps3_tax@tax_table) %in% contams_tax, ps3_tax)
+
+# Filter controls
+controls_tax <- ps3_tax %>%
+  ps_filter(SampleBinary == "Control", .keep_all_taxa = TRUE)
+
+controls_tax <- sample_data(controls_tax)$Project_ID 
+
+# Remove all controls
+noneg_tax <- ps_filter(noncontam_tax, !Project_ID %in% controls_tax)
+factor(sample_data(noneg_tax)$Trt)
+
+# Remove positive control
+noneg_tax <- ps_filter(noneg_tax, Trt != "PositiveControl")
+factor(sample_data(noneg_tax)$Trt)
+
+
+
+# Prevalence-based filtering for negonly decontam
+sort(phyloseq::sample_sums(noneg_tax))
+(noneg_tax <- phyloseq::subset_samples(noneg_tax, phyloseq::sample_sums(noneg_tax) > 1000))
+(noneg_tax <- phyloseq::prune_taxa(phyloseq::taxa_sums(noneg_tax) > 0, noneg_tax))
+noneg_tax <- noneg_tax %>% tax_filter(
+  min_prevalence = 0.01,
+  min_total_abundance = 0.0001)
+
+# Display sample data
+sample_data(noneg_tax)
+
+```
+
+<br>
+
+## Alpha Diversity
+
+```{r alpha_diversity_tax-summary}
+
+# Get alpha diversity metrics
+sampdf <- sample_data(noneg_tax) %>%
+  data.frame() %>%
+  rownames_to_column(var = "ID")
+
+# Calculate alpha diversity
+alpha <- estimate_richness(noneg_tax, measures = c("Shannon", "Observed")) %>%
+  rownames_to_column(var = "ID") %>%
+  merge(sampdf, by = "ID")
+
+# Get summary statistics for Shannon diversity
+sum_Shannon <- alpha %>%
+  group_by(Trt, Age_wk) %>%
+  get_summary_stats(Shannon, type = "mean_sd")
+
+sum_Shannon
+
+# Get summary statistics for Observed diversity
+sum_Observed <- alpha %>%
+  group_by(Trt, Age_wk) %>%
+  get_summary_stats(Observed, type = "mean_sd")
+
+sum_Observed
+
+```
+
+```{r alpha_diversity_tax-outliers, results="hide"}
+
+## Outliers 
+
+# Checking Outliers for Shannon Diversity
+st <- alpha %>% get_summary_stats(Shannon, type = "mean_sd") %>%
+  mutate(sdx3 = sd * 3,
+         outhi = mean + sdx3,
+         outlo = mean - sdx3)
+
+shannon_lower_outliers <- alpha$ID[alpha$Shannon < st$outlo]
+shannon_upper_outliers <- alpha$ID[alpha$Shannon > st$outhi]
+
+shannon_lower_outliers
+shannon_upper_outliers
+
+# Checking Outliers for Observed Diversity
+sto <- alpha %>% get_summary_stats(Observed, type = "mean_sd") %>%
+  mutate(sdx3 = sd * 3,
+         outhi = mean + sdx3,
+         outlo = mean - sdx3)
+
+observed_lower_outliers <- alpha$ID[alpha$Observed < sto$outlo]
+observed_upper_outliers <- alpha$ID[alpha$Observed > sto$outhi]
+
+observed_lower_outliers
+observed_upper_outliers
+
+sto$sd
+
+```
+
+<br>
+
+Shapiro-Wilk Test for Normality
+
+```{r normality_tests_tax}
+
+# Shapiro-Wilk Test for Normality
+shapiro_shannon <- shapiro.test(alpha$Shannon)
+shapiro_observed <- shapiro.test(alpha$Observed)
+
+shapiro_shannon # p-value = 9.769e-09
+shapiro_observed # p-value = 5.447e-11
+
+```
+
+<br>
+
+[Wilcox Test for Diet Effect]{.underline}
+
+Mann-Whitney and BH adjustment
+
+**Shannon Index**
+
+Taxonomy
+
+```{r Shannon_tax}
+
+## Doing first within Ab and then No - Shannon 
+alpha_Ab <- subset(alpha, Diet == "Ab")
+alpha_No <- subset(alpha, Diet == "No")
+
+alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
+alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
+
+kruskal.test(Shannon ~ Age_wk, data = alpha_Ab) #  p-value = 0.6345
+kruskal.test(Shannon ~ Age_wk, data = alpha_No) #  p-value = 0.009101
+
+# pairwise
+dunn_test_shannon <- dunn.test(alpha_No$Shannon, alpha_No$Age_wk, method = "BH") # p-value = 0.01
+
+
+## Comparing Ab and No
+
+results_Shannon <- list()
+
+# Loop through each week and perform the Mann-Whitney U test
+for (week in unique(alpha$Age_wk)) {
+  data_week <- subset(alpha, Age_wk == week)
+
+  # Mann-Whitney for Shannon
+  test_result_Shannon <- wilcox.test(Shannon ~ Trt, data = data_week)
+  results_Shannon[[paste0("Week_", week)]] <- test_result_Shannon$p.value
+}
+
+# Convert results to data frames for better visualization
+results_df_Shannon <- data.frame(Week = names(results_Shannon), P_Value = unlist(results_Shannon))
+
+# Adjust p-values to BH method
+results_df_Shannon$Adjusted_p_BH <- p.adjust(results_df_Shannon$P_Value, method = "BH")
+
+# Add a column for the groups compared
+results_df_Shannon$Groups_Compared <- "Ab vs No"
+  
+```
+
+<br>
+
+[Wilcoxon Test for Age Effect]{.underline}
+
+**Observed Index**
+
+Taxonomy
+
+```{r Observed_tax}
+
+## Doing first within Ab and then No - Observed 
+alpha_Ab <- subset(alpha, Diet == "Ab")
+alpha_No <- subset(alpha, Diet == "No")
+
+alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
+alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
+
+kruskal.test(Observed ~ Age_wk, data = alpha_Ab) # p-value = 0.4385
+kruskal.test(Observed ~ Age_wk, data = alpha_No) # p-value = 0.04373
+
+dunn.test(alpha_No$Observed, alpha_No$Age_wk, method = "bh") # p-value = 0.04
+
+## Comparing Ab and No
+
+results_Observed <- list()
+
+# Loop through each week and perform the Mann-Whitney U test
+for (week in unique(alpha$Age_wk)) {
+  data_week <- subset(alpha, Age_wk == week)
+
+  # Mann-Whitney for Observed
+  test_result_Observed <- wilcox.test(Observed ~ Trt, data = data_week)
+  results_Observed[[paste0("Week_", week)]] <- test_result_Observed$p.value
+}
+
+# Convert results to data frames for better visualization
+results_df_Observed <- data.frame(Week = names(results_Observed), P_Value = unlist(results_Observed))
+
+# Adjust p-values to BH method
+results_df_Observed$Adjusted_p_BH <- p.adjust(results_df_Observed$P_Value, method = "BH")
+
+# Add a column for the groups compared
+results_df_Observed$Groups_Compared <- "Ab vs No"
+
+alpha$Diet <- recode_factor(alpha$Diet,
+                            "Ab" = "MR+A",
+                            "No" = "MR")
+
+treatment_colors <- c("MR+A" = "#B22222", "MR" = "#377EB8")
+
+
+# plotting 
+
+library(ggpubr)
+
+ggline(alpha, x = "Age_wk", y = "Shannon",
+       add = "mean_sd", error.plot = "errorbar",
+       color = "Diet", group = "Diet",
+       palette = treatment_colors,
+       size = 1.0, point.size = 1.5, alpha = 0.8) +
+  scale_x_discrete(labels = c("1","3","5","7","9","11","13","15")) +
+  labs(x = "Age (weeks)", y = "Shannon Diversity") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "right",
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_blank()   # remove title
+  )
+
+ggline(alpha, x = "Age_wk", y = "Observed",
+       add = "mean_sd", error.plot = "errorbar",
+       color = "Diet", group = "Diet",
+       palette = treatment_colors,
+       size = 1.0, point.size = 1.5, alpha = 0.8) +
+  scale_x_discrete(labels = c("1","3","5","7","9","11","13","15")) +
+  scale_y_continuous(expand = c(0,0)) +
+  labs(x = "Age (weeks)", y = "Observed Diversity") +
+  theme_classic(base_size = 12) +
+  theme(
+    legend.position = "right",
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_blank()   # remove title
+  )
+
+```
+
+<br>
+
+[Wilcoxon Test for Diet Effect]{.underline}
+
+**Shannon and Observed Indexes for Taxonomy**
+
+```{r}
+
+#Test treatment and type : since it is not normal - wilcox
+wilcox.test(Shannon ~ Diet, data = alpha) #  p-value =  0.7419 
+wilcox.test(Observed ~ Diet, data = alpha) # p-value = 0.5462 
+
+
+```
+
+<br><br>
+
+## Beta Diversity
+
+```{r beta_diversity_taxonomy, results="hide"}
+
+set.seed(12345)
+
+pst_Ab <- subset_samples(noneg_tax, Diet == "Ab")
+pst_No <- subset_samples(noneg_tax, Diet == "No")
+
+#  Transform sample counts
+pst_Ab <- transform_sample_counts(pst_Ab, function(x) x / sum(x))
+pst_No <- transform_sample_counts(pst_No, function(x) x / sum(x))
+
+# CLR transform phyloseq objects at Family level
+beta2_Ab <- pst_Ab %>%
+  tax_transform(trans = "clr", rank = "Family")
+
+beta2_No <- pst_No %>%
+  tax_transform(trans = "clr", rank = "Family")
+
+# generate distance matrix
+psdist_Ab <- phyloseq::distance(beta2_Ab, method = "euclidean")
+psdist_No <- phyloseq::distance(beta2_No, method = "euclidean")
+
+```
+
+
+**Beta-diversity of the Ab group**
+
+Taxonomy
+
+```{r beta-div_tax_renaming}
+
+# renaming the tax table to remove the p__
+library(microbiomeutilities)
+otu_tab <- microbiome::abundances(noneg_tax)
+tax_tab <- phyloseq::tax_table(noneg_tax)
+tax_tab <- phyloseq::tax_table(noneg_tax)
+tax_table(noneg_tax)[, colnames(tax_table(noneg_tax))] <- gsub(tax_table(noneg_tax)[, colnames(tax_table(noneg_tax))],     pattern = "[a-z]__", replacement = "")
+
+
+# ADONIS test for Age_wk within the 'Ab' group
+adonis2(psdist_Ab ~ sample_data(beta2_Ab)$Age_wk, permutations = 10000) #ns
+
+
+# plotting on the next chunk
+
+
+```
+
+<br>
+
+**Beta-diversity of the No group**
+
+Taxonomy
+
+```{r beta-div_tax}
+
+# renaming the tax table to remove the p__
+library(microbiomeutilities)
+otu_tab <- microbiome::abundances(noneg_tax)
+tax_tab <- phyloseq::tax_table(noneg_tax)
+tax_tab <- phyloseq::tax_table(noneg_tax)
+tax_table(noneg_tax)[, colnames(tax_table(noneg_tax))] <- gsub(tax_table(noneg_tax)[, colnames(tax_table(noneg_tax))],     pattern = "[a-z]__", replacement = "")
+
+# ADONIS test for Age_wk within the 'No' group
+adonis2(psdist_No ~ sample_data(beta2_No)$Age_wk, permutations = 10000)
+
+# Pairwise comparison for Age_wk within the 'No' group
+statdf_No <- pairwise.adonis(psdist_No, sample_data(beta2_No)$Age_wk)
+print(statdf_No)
+
+
+library(ggplot2)
+library(microViz)
+library(dplyr)
+library(viridis)
+library(ggnewscale)
+
+
+#install.packages("scico")   # run once
+library(scico)
+
+age_palette <- setNames(
+  scico::scico(8, palette = "vikO"),  
+  c("1","3","5","7","9","11","13","15")
+)
+
+# Transform sample counts
+pst <- transform_sample_counts(noneg_tax, function(x) x / sum(x))
+
+# CLR transform phyloseq objects at Broadclass level
+beta <- pst %>%
+  tax_transform(trans = "clr", rank = "Phylum")
+
+# Factor setup
+sample_data(beta)$Diet <- recode(sample_data(beta)$Diet,
+                                 "Ab" = "MR+A",
+                                 "No" = "MR")
+                                 
+sample_data(beta)$Diet <- factor(sample_data(beta)$Diet, levels = c("MR+A", "MR"))
+
+sample_data(beta)$Age_wk <- factor(sample_data(beta)$Age_wk,
+                                   levels = c("1","3","5","7","9","11","13","15"))
+
+# Palettes
+treatment_colors <- c("MR+A" = "#B22222", "MR" = "#377EB8")
+
+# cividis palette for Age (8 discrete levels)
+age_palette <- setNames(viridis::viridis(8, option = "cividis"),
+                        levels(sample_data(beta)$Age_wk))
+
+shape_vals <- c("MR+A" = 16, "MR" = 17)
+
+# Ordination
+ord_all <- beta %>% ord_calc(method = "PCA")
+
+# Plot
+p <- ord_all %>%
+  ord_plot(aes_shape = FALSE, points_show = FALSE) +
+  geom_point(aes(color = Age_wk, shape = Diet),
+             size = 3.2, alpha = 2, stroke = 0) +
+  scale_shape_manual(values = shape_vals, name = "Diet") +
+  # cividis gradient for Age (purple → yellow)
+  scale_color_manual(
+    values = age_palette,
+    name = "Age (weeks)",
+    guide = guide_legend(override.aes = list(size = 4))
+  ) +
+  ggnewscale::new_scale("color") +
+  stat_ellipse(aes(color = Diet, group = Diet),
+               level = 0.95, linewidth = 0.9, alpha = 0.9) +
+  scale_color_manual(values = treatment_colors, name = "Diet") +
+  labs(x = "PC1", y = "PC2") +
+  theme_bw(base_size = 13) +
+  theme(
+    legend.position = "right",
+    legend.box = "vertical",
+    legend.title = element_text(size = 10, face = "bold"),
+    legend.text = element_text(size = 9),
+    legend.key.size = unit(0.45, "cm"),
+    axis.text = element_text(size = 11, face = "bold"),
+    axis.title = element_text(size = 12, face = "bold"),
+    panel.grid = element_blank(),
+    plot.margin = margin(5, 10, 5, 5),
+    plot.title = element_blank()
+  )
+
+p
+
+```
+
+
+```{r composition}
+
+# renaming the tax table to remove the g__
+otu_tab <- microbiome::abundances(noneg_tax)
+tax_tab <- phyloseq::tax_table(noneg_tax)
+tax_tab <- phyloseq::tax_table(noneg_tax)
+tax_table(noneg_tax)[, colnames(tax_table(noneg_tax))] <- gsub(tax_table(noneg_tax)[, colnames(tax_table(noneg_tax))],     pattern = "[a-z]__", replacement = "")
+
+library(scales)
+
+# Factor setup 
+sample_data(noneg_tax)$Age_wk <- factor(sample_data(noneg_tax)$Age_wk,
+                                        levels = c("1","3","5","7","9","11","13","15"))
+sample_data(noneg_tax)$Diet <- recode_factor(sample_data(noneg_tax)$Diet,
+                                             "Ab" = "MR+A", "No" = "MR")
+
+
+plot_genus <- function(ps_obj, diet_label, palette) {
+  # --- subset manually ---
+  meta <- sample_data(ps_obj)
+  keep <- rownames(meta)[meta$Diet == diet_label]
+  ps_sub <- prune_samples(keep, ps_obj)
+  ps_sub <- prune_taxa(taxa_sums(ps_sub) > 0, ps_sub)
+  stopifnot(nsamples(ps_sub) > 0)
+
+  # merge samples by Age_wk
+  merged <- phyloseq::merge_samples(ps_sub, "Age_wk")
+  merged <- transform_sample_counts(merged, function(x) x / sum(x))
+
+  # rebuild metadata
+  sdf <- data.frame(
+    Age_wk = sample_names(merged),
+    Diet   = diet_label,
+    row.names = sample_names(merged),
+    stringsAsFactors = FALSE
+  )
+  sample_data(merged) <- phyloseq::sample_data(sdf)
+  sample_data(merged)$Age_wk <- factor(sample_data(merged)$Age_wk,
+                                       levels = c("1","3","5","7","9","11","13","15"))
+
+  # plot
+  p <- comp_barplot(
+      merged,
+      tax_level = "Genus",
+      n_taxa = 12,
+      palette = palette,
+      transform = "compositional",
+      bar_width = 0.975
+    ) +
+    theme_pubclean(base_size = 11) +
+    theme(
+      strip.background = element_rect(color = "black", fill = "white"),
+      strip.text = element_text(size = 12, face = "bold"),
+      axis.text.x = element_text(size = 9, face = "bold"),
+      axis.text.y = element_text(size = 9, face = "bold"),
+      axis.title.y = element_text(size = 10, face = "bold"),
+      axis.title.x = element_text(size = 10, face = "bold"),
+      legend.position = "bottom",
+      legend.box = "horizontal",
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 9, face = "bold"),
+      plot.margin = margin(3, 3, 3, 3)
+    ) +
+    guides(fill = guide_legend(ncol = 5, keywidth = 0.6, keyheight = 0.5)) +
+    scale_x_discrete(limits = c("1","3","5","7","9","11","13","15"), drop = FALSE) +
+    facet_wrap(~Diet, scales = "free_x") +
+    labs(y = "Relative abundance", x = "Age (weeks)")
+
+  return(p)
+}
+
+# ---- run ----
+custom_palette <- c(
+  "#450C54", "#6D597A", "#24868E", "#43AA8B", "#90BE6D",
+  "#F9C74F", "#F3722C", "#F9844A", "#F94144", "#B56576",
+  "#577590", "#264653", "#999949", "#BEBEBE"
+)
+
+p_MRA <- plot_genus(noneg_tax, "MR+A", custom_palette)  # or "MR+A" if recoded
+p_MR  <- plot_genus(noneg_tax, "MR", custom_palette)  # or "MR" if recoded
+
+final_plot <- ggarrange(p_MRA, p_MR, nrow = 1, common.legend = TRUE, legend = "bottom")
+final_plot
+
+```
+

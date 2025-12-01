@@ -1,0 +1,14 @@
+.DS_Store
+*.Rhistory
+*.RData
+*.Rproj.user
+*.html
+*.pdf
+*.fastq.gz
+*.fq.gz
+*.bam
+*.sam
+*.zip
+renv/
+output/
+rawdata/
