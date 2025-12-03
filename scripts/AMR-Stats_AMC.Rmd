@@ -694,25 +694,15 @@ write.csv(sum_Observed,            "amr/sum_Observed.csv", row.names = FALSE)
 write.csv(results_df_Shannon,      "amr/wilcox_Shannon_byweek.csv", row.names = FALSE)
 write.csv(results_df_Observed,     "amr/wilcox_Observed_byweek.csv", row.names = FALSE)
 
-shannon_lmm_df <- data.frame(
-  Term   = rownames(lmm1_aov),
-  Fvalue = round(lmm1_aov$`F value`, 4),
-  df     = lmm1_aov$DenDF,
-  Pvalue = signif(lmm1_aov$`Pr(>F)`, 3)
-)
-
+lmm1_anova <- anova(lmm1)
+shannon_lmm_df <- as.data.frame(lmm1_anova)
+shannon_lmm_df$Term <- rownames(shannon_lmm_df)
 write.csv(shannon_lmm_df, "lmm_Shannon.csv", row.names = FALSE)
 
-observed_lmm_df <- data.frame(
-  Term   = rownames(lmm_obs_aov),
-  Fvalue = round(lmm_obs_aov$`F value`, 4),
-  df     = lmm_obs_aov$DenDF,
-  Pvalue = signif(lmm_obs_aov$`Pr(>F)`, 3)
-)
-
-write.csv(observed_lmm_df,
-          "lmm_Observed.csv",
-          row.names = FALSE)
+lmm_obs_aov <- anova(lmm_obs)
+observed_lmm_df <- as.data.frame(lmm_obs_aov)
+observed_lmm_df$Term <- rownames(observed_lmm_df)
+write.csv(observed_lmm_df, "lmm_Observed.csv", row.names = FALSE)
 
 ## 4) Outliers
 
