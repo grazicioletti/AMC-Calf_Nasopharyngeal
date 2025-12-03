@@ -77,7 +77,7 @@ contams <- rownames(contamdf.prev[contamdf.prev$contaminant == "TRUE", ])
 
 # Display list of contaminants
 cat("List of contaminants:\n")
-print(contams) # 55
+print(contams) # 56
 
 # Remove contaminant sequences
 noncontam <- prune_taxa(!rownames(ps2@tax_table) %in% contams, ps2)
@@ -204,6 +204,20 @@ AMR Genes
 
 ```{r Shannon}
 
+# doing the linear mixed model first
+library(lme4)
+library(lmerTest)
+
+alpha$Age_wk <- as.numeric(as.character(alpha$Age_wk))
+
+lmm1 <- lmer(Shannon ~ Diet * Age_wk + (1 | Animal_ID), data = alpha)
+
+anova(lmm1)
+
+summary(lmm1)
+
+plot(lmm1)
+
 ## Doing first within Ab and then No - Shannon 
 alpha_Ab <- subset(alpha, Diet == "Ab")
 alpha_No <- subset(alpha, Diet == "No")
@@ -247,6 +261,17 @@ results_df_Shannon$Groups_Compared <- "Ab vs No"
 AMR Genes
 
 ```{r Observed, fig.height=6, fig.width=8}
+
+# lmm 
+alpha$Age_wk <- as.numeric(as.character(alpha$Age_wk))
+
+lmm_obs <- lmer(Observed ~ Diet * Age_wk + (1 | Animal_ID), data = alpha)
+
+anova(lmm_obs)
+
+summary(lmm_obs)
+
+plot(lmm_obs)
 
 ## Doing first within Ab and then No - Shannon 
 alpha_Ab <- subset(alpha, Diet == "Ab")
@@ -668,6 +693,26 @@ write.csv(sum_Shannon,             "amr/sum_Shannon.csv", row.names = FALSE)
 write.csv(sum_Observed,            "amr/sum_Observed.csv", row.names = FALSE)
 write.csv(results_df_Shannon,      "amr/wilcox_Shannon_byweek.csv", row.names = FALSE)
 write.csv(results_df_Observed,     "amr/wilcox_Observed_byweek.csv", row.names = FALSE)
+
+shannon_lmm_df <- data.frame(
+  Term   = rownames(lmm1_aov),
+  Fvalue = round(lmm1_aov$`F value`, 4),
+  df     = lmm1_aov$DenDF,
+  Pvalue = signif(lmm1_aov$`Pr(>F)`, 3)
+)
+
+write.csv(shannon_lmm_df, "lmm_Shannon.csv", row.names = FALSE)
+
+observed_lmm_df <- data.frame(
+  Term   = rownames(lmm_obs_aov),
+  Fvalue = round(lmm_obs_aov$`F value`, 4),
+  df     = lmm_obs_aov$DenDF,
+  Pvalue = signif(lmm_obs_aov$`Pr(>F)`, 3)
+)
+
+write.csv(observed_lmm_df,
+          "lmm_Observed.csv",
+          row.names = FALSE)
 
 ## 4) Outliers
 

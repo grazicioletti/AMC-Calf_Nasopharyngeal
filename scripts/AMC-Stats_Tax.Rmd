@@ -236,6 +236,17 @@ kruskal.test(Shannon ~ Age_wk, data = alpha_No) #  chi-squared = 3.497, df = 4, 
 
 # no pairwise since ns
 
+# linear mixed model
+library(lme4)
+library(lmerTest)
+
+alpha_clean$Age_wk <- as.numeric(as.character(alpha_clean$Age_wk))
+
+lmm1 <- lmer(Shannon ~ Diet * Age_wk + (1 | Animal_ID), data = alpha_clean)
+
+anova(lmm1)
+
+summary(lmm1)
 
 ```
 
@@ -261,6 +272,16 @@ kruskal.test(Observed ~ Age_wk, data = alpha_No) # KKruskal-Wallis chi-squared =
 
 # no dunn test since ns 
 
+# linear mixed model 
+alpha_clean$Age_wk <- as.numeric(as.character(alpha_clean$Age_wk))
+
+lmm_obs <- lmer(Observed ~ Diet * Age_wk + (1 | Animal_ID), data = alpha_clean)
+
+anova(lmm_obs)
+
+summary(lmm_obs)
+
+# plotting
 alpha_clean$Diet <- recode_factor(alpha_clean$Diet,
                             "Ab" = "MR+A",
                             "No" = "MR")
@@ -601,6 +622,33 @@ write.csv(alpha_clean, "taxonomic/alpha_clean.csv", row.names = FALSE)
 # Summary stats
 write.csv(sum_Shannon, "taxonomic/sum_Shannon.csv", row.names = FALSE)
 write.csv(sum_Observed, "taxonomic/sum_Observed.csv", row.names = FALSE)
+
+lmm1_aov <- anova(lmm1)
+
+shannon_lmm_df <- data.frame(
+  Term   = rownames(lmm1_aov),
+  Fvalue = round(lmm1_aov$`F value`, 4),
+  df     = lmm1_aov$DenDF,
+  Pvalue = signif(lmm1_aov$`Pr(>F)`, 3)
+)
+
+write.csv(shannon_lmm_df,
+          "taxonomic/lmm_Shannon_byterm.csv",
+          row.names = FALSE)
+          
+lmm_obs_aov <- anova(lmm_obs)
+
+observed_lmm_df <- data.frame(
+  Term   = rownames(lmm_obs_aov),
+  Fvalue = round(lmm_obs_aov$`F value`, 4),
+  df     = lmm_obs_aov$DenDF,
+  Pvalue = signif(lmm_obs_aov$`Pr(>F)`, 3)
+)
+
+write.csv(observed_lmm_df,
+          "taxonomic/lmm_Observed_byterm.csv",
+          row.names = FALSE)
+
 
 # Outlier IDs
 write.table(outlier_ids, "taxonomic/outlier_ids.txt",
