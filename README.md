@@ -42,3 +42,5 @@ Script: `scripts/AMR-Stats_AMC.Rmd`
 ## Reproducibility
 
 All exported CSV and RDS files in the `amr/` and `taxonomic/` folders are generated directly from the scripts in this repository.
+
+BioProject: PRJNA1347079
