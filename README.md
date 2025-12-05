@@ -6,10 +6,10 @@ All outputs are included to support full reproducibility for the associated manu
 ## Repository Structure
 
 **amr/**  
-Processed AMR outputs (decontamination results, alpha/beta diversity summaries, CLR matrices, resistance class summaries, PERMANOVA)
+Processed AMR outputs (decontamination results, alpha/beta diversity summaries, CLR matrices, resistance class summaries, LMM, PERMANOVA)
 
 **taxonomic/**  
-Processed taxonomic outputs (Kraken2/Bracken tables, phyloseq objects, alpha/beta diversity summaries, PERMANOVA)
+Processed taxonomic outputs (Kraken2/Bracken tables, phyloseq objects, alpha/beta diversity summaries, LMM, PERMANOVA)
 
 **data/**  
 Metadata and RDS input files used to build phyloseq objects
