@@ -230,9 +230,9 @@ alpha_No <- subset(alpha_clean, Diet == "No")
 alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
 alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
 
-kruskal.test(Shannon ~ Age_wk, data = alpha_Ab)  # chi-squared = 0.66667, df = 4, p-value = 0.9554
+kw_Shannon_Ab <- kruskal.test(Shannon ~ Age_wk, data = alpha_Ab)  # chi-squared = 0.66667, df = 4, p-value = 0.9554
 
-kruskal.test(Shannon ~ Age_wk, data = alpha_No) #  chi-squared = 3.497, df = 4, p-value = 0.4783
+kw_Shannon_No <- kruskal.test(Shannon ~ Age_wk, data = alpha_No) #  chi-squared = 3.497, df = 4, p-value = 0.4783
 
 # no pairwise since ns
 
@@ -267,8 +267,8 @@ alpha_No <- subset(alpha_clean, Diet == "No")
 alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
 alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
 
-kruskal.test(Observed ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 2.1356, df = 4, p-value = 0.7108
-kruskal.test(Observed ~ Age_wk, data = alpha_No) # KKruskal-Wallis chi-squared = 1.2327, df = 4, p-value = 0.8727
+kw_Observed_Ab <- kruskal.test(Observed ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 2.1356, df = 4, p-value = 0.7108
+kw_Observed_No <- kruskal.test(Observed ~ Age_wk, data = alpha_No) # KKruskal-Wallis chi-squared = 1.2327, df = 4, p-value = 0.8727
 
 # no dunn test since ns 
 
@@ -603,15 +603,31 @@ top20_genus
 
 ``` {r }
 # ===========================================================
-# SAVE REPRODUCIBILITY TABLES FOR GitHub
+# SAVE REPRODUCIBILITY TABLES FOR GitHub — TAXONOMY PIPELINE
 # ===========================================================
 
-# Create folder if not exists
 dir.create("taxonomic", showWarnings = FALSE)
 
-# -------------------------------
-# 1. Save alpha diversity tables
-# -------------------------------
+# Helper: Convert htest (from kruskal.test) into a data frame
+kw_to_df <- function(kw) {
+  data.frame(
+    Statistic = kw$statistic,
+    Parameter = kw$parameter,
+    Pvalue    = kw$p.value,
+    Method    = kw$method
+  )
+}
+
+# ===========================================================
+# 1) Decontam outputs
+# ===========================================================
+
+write.csv(contamdf.prev, "taxonomic/decontam_results.csv", row.names = TRUE)
+writeLines(contams_tax, "taxonomic/list_of_contaminants.txt")
+
+# ===========================================================
+# 2) Alpha diversity tables
+# ===========================================================
 
 # Raw alpha
 write.csv(alpha, "taxonomic/alpha_raw.csv", row.names = FALSE)
@@ -619,94 +635,79 @@ write.csv(alpha, "taxonomic/alpha_raw.csv", row.names = FALSE)
 # Clean alpha (outliers removed)
 write.csv(alpha_clean, "taxonomic/alpha_clean.csv", row.names = FALSE)
 
-# Summary stats
+# ---- Normality tests ----
+sink("taxonomic/shapiro_alpha.txt")
+print(shapiro_shannon)
+print(shapiro_observed)
+sink()
+
+# ---- Kruskal–Wallis (converted to data frame) ----
+write.csv(kw_to_df(kw_Shannon_Ab), "taxonomic/KW_Shannon_Ab.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Shannon_No), "taxonomic/KW_Shannon_No.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Observed_Ab), "taxonomic/KW_Observed_Ab.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Observed_No), "taxonomic/KW_Observed_No.csv", row.names = FALSE)
+
+# ---- Summary stats ----
 write.csv(sum_Shannon, "taxonomic/sum_Shannon.csv", row.names = FALSE)
 write.csv(sum_Observed, "taxonomic/sum_Observed.csv", row.names = FALSE)
 
-lmm1_anova <- anova(lmm1)
-shannon_lmm_df <- as.data.frame(lmm1_anova)
-shannon_lmm_df$Term <- rownames(shannon_lmm_df)
-write.csv(shannon_lmm_df, "lmm_Shannon.csv", row.names = FALSE)
+# ---- Linear Mixed Models ----
+saveRDS(lmm1,     "taxonomic/lmm_Shannon.rds")
+saveRDS(lmm_obs,  "taxonomic/lmm_Observed.rds")
 
-lmm_obs_aov <- anova(lmm_obs)
-observed_lmm_df <- as.data.frame(lmm_obs_aov)
-observed_lmm_df$Term <- rownames(observed_lmm_df)
-write.csv(observed_lmm_df, "lmm_Observed.csv", row.names = FALSE)
+# ---- Outlier IDs ----
+write.table(outlier_ids,
+            "taxonomic/outlier_ids.txt",
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE)
 
+# ===========================================================
+# 3) Beta diversity inputs
+# ===========================================================
 
-# Outlier IDs
-write.table(outlier_ids, "taxonomic/outlier_ids.txt",
-            row.names = FALSE, col.names = FALSE, quote = FALSE)
-
-
-# -------------------------------
-# 2. Save beta-diversity inputs
-# -------------------------------
-
-# Distance matrices
 saveRDS(psdist_Ab, "taxonomic/psdist_Ab.rds")
 saveRDS(psdist_No, "taxonomic/psdist_No.rds")
 
-# ADONIS results
 adonis_Ab <- adonis2(psdist_Ab ~ sample_data(beta2_Ab)$Age_wk, permutations = 10000)
 adonis_No <- adonis2(psdist_No ~ sample_data(beta2_No)$Age_wk, permutations = 10000)
 
 write.csv(as.data.frame(adonis_Ab), "taxonomic/adonis_Ab.csv")
 write.csv(as.data.frame(adonis_No), "taxonomic/adonis_No.csv")
 
+# ===========================================================
+# 4) Abundance tables
+# ===========================================================
 
-# -------------------------------
-# 3. Save decontam results
-# -------------------------------
-
-write.csv(contamdf.prev, "taxonomic/decontam_results.csv")
-write.table(contams_tax, "taxonomic/list_of_contaminants.txt",
-            quote = FALSE, row.names = FALSE, col.names = FALSE)
-
-
-# -------------------------------
-# 4. Save taxonomic abundance tables
-# -------------------------------
-
-# Relative abundance table (compositional)
-write.csv(otu_tab, "taxonomic/otu_table_rel_abund.csv")
-
-# Long format relative abundance
+write.csv(otu_tab,  "taxonomic/otu_table_rel_abund.csv")
 write.csv(otu_long, "taxonomic/otu_table_rel_abund_long.csv", row.names = FALSE)
+write.csv(tax_tab,  "taxonomic/tax_table_cleaned.csv")
 
-# Tax table used in that section
-write.csv(tax_tab, "taxonomic/tax_table_cleaned.csv")
-
-
-# -------------------------------
-# 5. Save top taxa tables
-# -------------------------------
+# ===========================================================
+# 5) Top taxa tables
+# ===========================================================
 
 write.csv(mean_abund_genus, "taxonomic/mean_abundance_genus.csv", row.names = FALSE)
-write.csv(top20_genus, "taxonomic/top20_genus.csv", row.names = FALSE)
+write.csv(top20_genus,      "taxonomic/top20_genus.csv", row.names = FALSE)
 
+# ===========================================================
+# 6) CLR-transformed tables for ordination
+# ===========================================================
 
-# -------------------------------
-# 6. Save CLR-transformed tables for ordination
-# -------------------------------
-
-# Abundant CLR (Already in beta)
 clr_Ab <- abundances(beta2_Ab)
 clr_No <- abundances(beta2_No)
 
 write.csv(clr_Ab, "taxonomic/clr_abundance_Ab.csv")
 write.csv(clr_No, "taxonomic/clr_abundance_No.csv")
 
-
-# -------------------------------
-# 7. Save final phyloseq object (clean)
-# -------------------------------
+# ===========================================================
+# 7) Final cleaned phyloseq object
+# ===========================================================
 
 saveRDS(noneg_tax, "taxonomic/noneg_tax_clean.rds")
 
-# ===========================================================
-# DONE — all reproducibility tables saved to /taxonomic/
-# ===========================================================
+cat("✓ All TAXONOMY output files successfully saved in /taxonomic folder\n")
+
 ```
 
 

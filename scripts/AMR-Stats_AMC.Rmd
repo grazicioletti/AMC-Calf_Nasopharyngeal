@@ -225,29 +225,10 @@ alpha_No <- subset(alpha, Diet == "No")
 alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
 alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
 
-kruskal.test(Shannon ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 1.8624, df = 4, p-value = 0.7611
-kruskal.test(Shannon ~ Age_wk, data = alpha_No) # Kruskal-Wallis chi-squared = 1.3218, df = 4, p-value = 0.8577
+kw_Shannon_Ab <- kruskal.test(Shannon ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 1.8624, df = 4, p-value = 0.7611
+kw_Shannon_No <- kruskal.test(Shannon ~ Age_wk, data = alpha_No) # Kruskal-Wallis chi-squared = 1.3218, df = 4, p-value = 0.8577
+
 # not necessary to run Dunn bc ns
-
-results_Shannon <- list()
-
-# Loop through each week and perform the Mann-Whitney U test
-for (week in unique(alpha$Age_wk)) {
-  data_week <- subset(alpha, Age_wk == week)
-
-  # Mann-Whitney for Shannon
-  test_result_Shannon <- wilcox.test(Shannon ~ Trt, data = data_week)
-  results_Shannon[[paste0("Week_", week)]] <- test_result_Shannon$p.value
-}
-
-# Convert results to data frames 
-results_df_Shannon <- data.frame(Week = names(results_Shannon), P_Value = unlist(results_Shannon))
-
-# Adjust p-values to BH method
-results_df_Shannon$Adjusted_P_Value_BH <- p.adjust(results_df_Shannon$P_Value, method = "BH")
-
-# Add a column for the groups compared
-results_df_Shannon$Groups_Compared <- "Ab vs No"
 
 # plotting merged alphas on next chunk 
 
@@ -280,34 +261,8 @@ alpha_No <- subset(alpha, Diet == "No")
 alpha_Ab$Age_wk <- as.numeric(alpha_Ab$Age_wk)
 alpha_No$Age_wk <- as.numeric(alpha_No$Age_wk)
 
-kruskal.test(Observed ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 1.5372, df = 4, p-value = 0.82
-kruskal.test(Observed ~ Age_wk, data = alpha_No) # Kruskal-Wallis chi-squared = 0.82064, df = 4, p-value = 0.9357
-
-
-## Comparing Ab and No regarding same week
-
-results_Observed <- list()
-
-# Loop through each week and perform the Mann-Whitney U test
-for (week in unique(alpha$Age_wk)) {
-  data_week <- subset(alpha, Age_wk == week)
-
-  # Mann-Whitney for Observed
-  test_result_Observed <- wilcox.test(Observed ~ Trt, data = data_week)
-  results_Observed[[paste0("Week_", week)]] <- test_result_Observed$p.value
-}
-  
-# Convert results to data frames 
-results_df_Observed <- data.frame(Week = names(results_Observed), P_Value = unlist(results_Observed))
-
-# Adjust p-values to BH method
-results_df_Observed$Adjusted_P_Value_BH<- p.adjust(results_df_Observed$P_Value, method = "BH")
-
-# Add a column for the groups compared
-results_df_Observed$Groups_Compared <- "Ab vs No"
-
-# Print the results
-print(results_df_Observed)
+kw_Observed_Ab <- kruskal.test(Observed ~ Age_wk, data = alpha_Ab) # Kruskal-Wallis chi-squared = 1.5372, df = 4, p-value = 0.82
+kw_Observed_No <- kruskal.test(Observed ~ Age_wk, data = alpha_No) # Kruskal-Wallis chi-squared = 0.82064, df = 4, p-value = 0.9357
 
 # plotting
 alpha$Age_wk <- factor(alpha$Age_wk, levels = c(1, 5, 7, 9, 11))
@@ -668,78 +623,118 @@ draw(ht)
 
 ```
 ``` {r }
-# ========================================================================
+# ===========================================================
+# SAVE REPRODUCIBILITY TABLES FOR GitHub — AMR PIPELINE
+# ===========================================================
 
-# SAVE ALL PROCESSED AMR OUTPUTS FOR REPRODUCIBILITY
+dir.create("amr", showWarnings = FALSE)
 
-# ========================================================================
+# Helper: Convert htest (Kruskal) to data frame
+kw_to_df <- function(kw) {
+  data.frame(
+    Statistic = kw$statistic,
+    Parameter = kw$parameter,
+    Pvalue    = kw$p.value,
+    Method    = kw$method
+  )
+}
 
+# ===========================================================
+# 1) Decontam outputs
+# ===========================================================
 
-## 1) Decontam outputs
+write.csv(contamdf.prev, "amr/decontam_results-amr.csv", row.names = TRUE)
+writeLines(contams, "amr/list_of_contaminants-amr.txt")
 
-write.csv(contamdf.prev,           "amr/decontam_results.csv", row.names = TRUE)
-writeLines(contams,                "amr/list_of_contaminants.txt")
+# ===========================================================
+# 2) Alpha diversity tables
+# ===========================================================
 
-## 2) Cleaned phyloseq objects
+write.csv(alpha, "amr/AMR-alpha.csv", row.names = FALSE)
 
-saveRDS(noneg,                     "amr/noneg_amr_clean.rds")
-saveRDS(psdist_Ab,                 "amr/psdist_Ab.rds")
-saveRDS(psdist_No,                 "amr/psdist_No.rds")
+# ---- Normality tests ----
+sink("amr/AMR-shapiro_alpha.txt")
+print(shapiro_shannon)
+print(shapiro_observed)
+sink()
 
-## 3) Alpha diversity tables
+# ---- Summary stats ----
+write.csv(sum_Shannon, "amr/AMR-sum_Shannon.csv", row.names = FALSE)
+write.csv(sum_Observed, "amr/AMR-sum_Observed.csv", row.names = FALSE)
 
-write.csv(alpha,                   "amr/alpha_raw.csv", row.names = FALSE)
-write.csv(sum_Shannon,             "amr/sum_Shannon.csv", row.names = FALSE)
-write.csv(sum_Observed,            "amr/sum_Observed.csv", row.names = FALSE)
-write.csv(results_df_Shannon,      "amr/wilcox_Shannon_byweek.csv", row.names = FALSE)
-write.csv(results_df_Observed,     "amr/wilcox_Observed_byweek.csv", row.names = FALSE)
+# ===========================================================
+# 3) Kruskal–Wallis (converted to data frames)
+# ===========================================================
 
-lmm1_anova <- anova(lmm1)
-shannon_lmm_df <- as.data.frame(lmm1_anova)
-shannon_lmm_df$Term <- rownames(shannon_lmm_df)
-write.csv(shannon_lmm_df, "lmm_Shannon.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Shannon_Ab), "amr/AMR-KW_Shannon_Ab.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Shannon_No), "amr/AMR-KW_Shannon_No.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Observed_Ab), "amr/AMR-KW_Observed_Ab.csv", row.names = FALSE)
+write.csv(kw_to_df(kw_Observed_No), "amr/AMR-KW_Observed_No.csv", row.names = FALSE)
 
-lmm_obs_aov <- anova(lmm_obs)
-observed_lmm_df <- as.data.frame(lmm_obs_aov)
-observed_lmm_df$Term <- rownames(observed_lmm_df)
-write.csv(observed_lmm_df, "lmm_Observed.csv", row.names = FALSE)
+# ===========================================================
+# 4) Linear Mixed Models
+# ===========================================================
 
-## 4) Outliers
+saveRDS(lmm1,     "amr/AMR-lmm_Shannon.rds")
+saveRDS(lmm_obs,  "amr/AMR-lmm_Observed.rds")
 
-writeLines(shannon_upper_outliers, "amr/outlier_Shannon_upper.txt")
-writeLines(observed_upper_outliers,"amr/outlier_Observed_upper.txt")
+# ===========================================================
+# 5) Outliers
+# ===========================================================
 
-## 5) Beta diversity / PERMANOVA
+writeLines(as.character(shannon_upper_outliers),  "amr/AMR-outlier_Shannon_upper.txt")
+writeLines(as.character(observed_upper_outliers), "amr/AMR-outlier_Observed_upper.txt")
 
-write.csv(adonis2(psdist_Ab ~ sample_data(beta1_Ab)$Age_wk),
-"amr/beta_PERMANOVA_Ab.csv")
-write.csv(adonis2(psdist_No ~ sample_data(beta1_No)$Age_wk),
-"amr/beta_PERMANOVA_No.csv")
+# ===========================================================
+# 6) Beta diversity / PERMANOVA
+# ===========================================================
 
-## 6) CLR abundance matrices for both groups
+saveRDS(psdist_Ab, "amr/AMR-psdist_Ab.rds")
+saveRDS(psdist_No, "amr/AMR-psdist_No.rds")
 
-clr_abundance_Ab <- as.matrix(otu_table(beta1_Ab))
-clr_abundance_No <- as.matrix(otu_table(beta1_No))
+adonis_Ab <- adonis2(psdist_Ab ~ sample_data(beta1_Ab)$Age_wk, permutations = 10000)
+adonis_No <- adonis2(psdist_No ~ sample_data(beta1_No)$Age_wk, permutations = 10000)
 
-write.csv(clr_abundance_Ab,        "amr/clr_abundance_Ab.csv")
-write.csv(clr_abundance_No,        "amr/clr_abundance_No.csv")
+write.csv(as.data.frame(adonis_Ab), "amr/AMR-adonis_Ab.csv")
+write.csv(as.data.frame(adonis_No), "amr/AMR-adonis_No.csv")
 
-## 7) Resistance class heatmap matrices
+# ===========================================================
+# 7) Resistance class heatmap matrices
+# ===========================================================
 
-write.csv(z3,                      "amr/zscore_matrix_class.csv")
-write.csv(z3_sub,                  "amr/zscore_matrix_class_top5.csv")
+write.csv(z3,     "amr/zscore_matrix_class.csv")
+write.csv(z3_sub, "amr/zscore_matrix_class_top5.csv")
 
-## 8) Tax tables
+# ===========================================================
+# 8) Tax tables
+# ===========================================================
 
-write.csv(as.data.frame(tax_table(noneg)),
-"amr/tax_table_cleaned.csv")
+write.csv(as.data.frame(tax_table(noneg)), "amr/tax_table_cleaned.csv")
 
-## 9) Composition summaries
+# ===========================================================
+# 9) Composition summaries
+# ===========================================================
 
-write.csv(mat,                     "amr/otu_table_rel_abund.csv")
-write.csv(merge3,                  "amr/AMR_class_abundance_table.csv")
-write.csv(top5_df,                 "amr/AMR_class_top5.csv")
+write.csv(mat,      "amr/otu_table_rel_abund.csv")
+write.csv(merge3,   "amr/AMR_class_abundance_table.csv")
+write.csv(top5_df,  "amr/AMR_class_top5.csv")
 
-cat("✓ All AMR output files saved in /amr folder\n")
+# ===========================================================
+# 10) CLR abundance tables (ordination inputs)
+# ===========================================================
+
+clr_Ab <- abundances(beta1_Ab)
+clr_No <- abundances(beta1_No)
+
+write.csv(clr_Ab, "amr/AMR-clr_abundance_Ab.csv")
+write.csv(clr_No, "amr/AMR-clr_abundance_No.csv")
+
+# ===========================================================
+# 11) Save final cleaned phyloseq object
+# ===========================================================
+
+saveRDS(noneg, "amr/noneg_amr_clean.rds")
+
+cat("✓ All AMR output files successfully saved in /amr folder\n")
 
 ```

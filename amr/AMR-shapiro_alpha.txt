@@ -1,0 +1,12 @@
+
+	Shapiro-Wilk normality test
+
+data:  alpha$Shannon
+W = 0.75965, p-value = 4.102e-08
+
+
+	Shapiro-Wilk normality test
+
+data:  alpha$Observed
+W = 0.85755, p-value = 1.114e-05
+
