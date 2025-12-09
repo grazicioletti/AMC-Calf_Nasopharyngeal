@@ -342,12 +342,12 @@ pst_No <- subset_samples(noneg_tax, Diet == "No")
 pst_Ab <- transform_sample_counts(pst_Ab, function(x) x / sum(x))
 pst_No <- transform_sample_counts(pst_No, function(x) x / sum(x))
 
-# CLR transform phyloseq objects at Phylum level
+# CLR transform phyloseq objects at Genus level
 beta2_Ab <- pst_Ab %>%
-  tax_transform(trans = "clr", rank = "Phylum")
+  tax_transform(trans = "clr", rank = "Genus")
 
 beta2_No <- pst_No %>%
-  tax_transform(trans = "clr", rank = "Phylum")
+  tax_transform(trans = "clr", rank = "Genus")
 
 # generate distance matrix
 psdist_Ab <- phyloseq::distance(beta2_Ab, method = "euclidean")
@@ -424,9 +424,9 @@ age_palette <- setNames(
 # Transform sample counts
 pst <- transform_sample_counts(noneg_tax, function(x) x / sum(x))
 
-# CLR transform phyloseq objects at Broadclass level
+# CLR transform phyloseq objects at Genus level
 beta <- pst %>%
-  tax_transform(trans = "clr", rank = "Phylum")
+  tax_transform(trans = "clr", rank = "Genus")
 
 # Factor setup
 sample_data(beta)$Diet <- recode(sample_data(beta)$Diet,
