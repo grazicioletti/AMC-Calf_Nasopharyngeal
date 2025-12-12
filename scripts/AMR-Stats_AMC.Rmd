@@ -196,7 +196,7 @@ shapiro_observed # W = 0.85721, p-value = 1.114e-05
 
 [Wilcox Test for Diet Effect]{.underline}
 
-Mann-Whitney and BH adjustment
+Mann-Whitney 
 
 **Shannon Index**
 

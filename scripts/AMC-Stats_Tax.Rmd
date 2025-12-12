@@ -41,7 +41,7 @@ library(dunn.test)
 library(microbiome)
 library(pairwiseAdonis)
 
-ps_tax <- readRDS("data/ps_tax.RDS")
+ps_tax <- readRDS(url("https://github.com/grazicioletti/AMC-Calf_Nasopharyngeal/raw/main/data/ps_tax.RDS"))
 
 ```
 
@@ -215,7 +215,7 @@ shapiro_observed # W = 0.66831, p-value = 8.96e-10
 
 [Wilcox Test for Diet Effect]{.underline}
 
-Mann-Whitney and BH adjustment
+Mann-Whitney 
 
 **Shannon Index**
 
