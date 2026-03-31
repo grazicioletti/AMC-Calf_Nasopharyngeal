@@ -1,0 +1,32 @@
+ Family: nbinom2  ( log )
+Formula:          Observed ~ Diet * Age_wk + (1 | Animal_ID)
+Data: alpha_clean
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+    763.6     790.9    -367.8     735.6        38 
+
+Random effects:
+
+Conditional model:
+ Groups    Name        Variance Std.Dev.
+ Animal_ID (Intercept) 2.51e-09 5.01e-05
+Number of obs: 52, groups:  Animal_ID, 11
+
+Dispersion parameter for nbinom2 family ():  3.4 
+
+Conditional model:
+                   Estimate Std. Error z value Pr(>|z|)    
+(Intercept)        6.398179   0.272046  23.519   <2e-16 ***
+DietMR+A          -0.060764   0.415598  -0.146   0.8838    
+Age_wk5            0.112972   0.364939   0.310   0.7569    
+Age_wk7           -0.186575   0.384842  -0.485   0.6278    
+Age_wk9            0.004567   0.384728   0.012   0.9905    
+Age_wk11           0.052607   0.364964   0.144   0.8854    
+Age_wk13          -0.896921   0.472478  -1.898   0.0577 .  
+DietMR+A:Age_wk5  -0.002130   0.539522  -0.004   0.9968    
+DietMR+A:Age_wk7   0.483794   0.553130   0.875   0.3818    
+DietMR+A:Age_wk9  -0.250295   0.544213  -0.460   0.6456    
+DietMR+A:Age_wk11  0.054427   0.539540   0.101   0.9196    
+DietMR+A:Age_wk13  1.076808   0.629214   1.711   0.0870 .  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
