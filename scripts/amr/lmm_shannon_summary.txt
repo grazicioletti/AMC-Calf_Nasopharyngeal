@@ -1,0 +1,60 @@
+Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
+  method [lmerModLmerTest]
+Formula: Shannon ~ Diet * Age_wk + (1 | Animal_ID)
+   Data: alpha
+
+      AIC       BIC    logLik -2*log(L)  df.resid 
+     52.1      78.8     -12.0      24.1        36 
+
+Scaled residuals: 
+    Min      1Q  Median      3Q     Max 
+-2.6635 -0.2457  0.2448  0.6920  1.4908 
+
+Random effects:
+ Groups    Name        Variance Std.Dev.
+ Animal_ID (Intercept) 0.005899 0.0768  
+ Residual              0.089479 0.2991  
+Number of obs: 50, groups:  Animal_ID, 11
+
+Fixed effects:
+                   Estimate Std. Error        df t value Pr(>|t|)    
+(Intercept)        5.371104   0.154230 49.722317  34.825   <2e-16 ***
+DietMR+A          -0.028899   0.235315 49.936485  -0.123   0.9027    
+Age_wk5            0.028772   0.201254 41.923978   0.143   0.8870    
+Age_wk7           -0.023154   0.231124 45.869634  -0.100   0.9206    
+Age_wk9           -0.046232   0.213016 44.062855  -0.217   0.8292    
+Age_wk11           0.199364   0.213016 44.062855   0.936   0.3544    
+Age_wk13          -0.475054   0.261323 44.550015  -1.818   0.0758 .  
+DietMR+A:Age_wk5   0.066319   0.298065 42.781342   0.222   0.8250    
+DietMR+A:Age_wk7   0.286896   0.318995 44.778849   0.899   0.3733    
+DietMR+A:Age_wk9  -0.006404   0.306135 43.779717  -0.021   0.9834    
+DietMR+A:Age_wk11 -0.010305   0.314230 44.834980  -0.033   0.9740    
+DietMR+A:Age_wk13  0.357560   0.337352 44.506465   1.060   0.2949    
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+Correlation of Fixed Effects:
+            (Intr) DtMR+A Ag_wk5 Ag_wk7 Ag_wk9 Ag_w11 Ag_w13 DMR+A:A_5
+DietMR+A    -0.655                                                    
+Age_wk5     -0.728  0.477                                             
+Age_wk7     -0.639  0.419  0.490                                      
+Age_wk9     -0.690  0.452  0.529  0.469                               
+Age_wk11    -0.690  0.452  0.529  0.469  0.507                        
+Age_wk13    -0.555  0.364  0.426  0.371  0.408  0.408                 
+DtMR+A:Ag_5  0.492 -0.756 -0.675 -0.331 -0.357 -0.357 -0.287          
+DtMR+A:Ag_7  0.463 -0.709 -0.355 -0.725 -0.340 -0.340 -0.269  0.560   
+DtMR+A:Ag_9  0.480 -0.737 -0.368 -0.327 -0.696 -0.353 -0.284  0.580   
+DtMR+A:A_11  0.468 -0.721 -0.359 -0.318 -0.344 -0.678 -0.276  0.566   
+DtMR+A:A_13  0.430 -0.667 -0.330 -0.287 -0.316 -0.316 -0.775  0.525   
+            DMR+A:A_7 DMR+A:A_9 DMR+A:A_11
+DietMR+A                                  
+Age_wk5                                   
+Age_wk7                                   
+Age_wk9                                   
+Age_wk11                                  
+Age_wk13                                  
+DtMR+A:Ag_5                               
+DtMR+A:Ag_7                               
+DtMR+A:Ag_9  0.546                        
+DtMR+A:A_11  0.533     0.557              
+DtMR+A:A_13  0.491     0.515     0.503    
