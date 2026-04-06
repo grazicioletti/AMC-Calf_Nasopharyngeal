@@ -341,6 +341,20 @@ ggplot(emm_shannon_df,
     position = position_dodge(0.8),
     width = 0.2
   ) +
+  geom_jitter(
+  data = alpha_clean,
+  aes(x = Age_wk,
+      y = Shannon,
+      group = Diet),   
+  position = position_jitterdodge(
+    jitter.width = 0.12,
+    dodge.width = 1.0
+  ),
+  color = "black",
+  size = 2,
+  alpha = 0.6,
+  inherit.aes = FALSE
+) +
   scale_fill_manual(values = treatment_colors) +
   theme_classic() +
   labs(
@@ -366,6 +380,20 @@ ggplot(emm_observed_df,
     position = position_dodge(0.8),
     width = 0.2
   ) +
+  geom_jitter(
+  data = alpha_clean,
+  aes(x = Age_wk,
+      y = Observed,
+      group = Diet),   
+  position = position_jitterdodge(
+    jitter.width = 0.12,
+    dodge.width = 0.8
+  ),
+  color = "black",
+  size = 2,
+  alpha = 0.6,
+  inherit.aes = FALSE
+)+
   scale_fill_manual(values = treatment_colors) +
   theme_classic() +
   labs(
@@ -527,7 +555,7 @@ mean_abund_genus <- otu_long %>%
   summarise(Mean_RelAbundance = mean(RelAbundance, na.rm = TRUE) * 100) %>%
   arrange(desc(Mean_RelAbundance))
 
-# Get top 25
+# Get top 30
 top30_genus <- head(mean_abund_genus, 30)
 
 print(top30_genus, n=30)
